@@ -4,6 +4,7 @@
 class PriceLevel;
 struct Order {
     uint64_t order_id;
+    uint64_t user_id;
     bool is_buy_side;
     uint64_t quantity;
     uint64_t price;

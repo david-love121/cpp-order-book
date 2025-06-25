@@ -3,14 +3,16 @@
 #include <unordered_map>
 #include <map>
 #include <list>
-
+#include <atomic>
+#include <vector>
 // Forward declaration
 class PriceLevel;
 struct Order;
+struct Trade;
 class OrderBook {
 public:
     // Public API for users
-    void AddOrder(uint64_t order_id, bool is_buy, uint64_t quantity, uint64_t price);
+    void AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price);
     void CancelOrder(uint64_t order_id);
     void ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price);
 
@@ -18,6 +20,10 @@ public:
     uint64_t GetBestBid() const;
     uint64_t GetBestAsk() const;
     //... other getters for depth, etc.
+
+    uint64_t GetTotalBidVolume() const;
+    uint64_t GetTotalAskVolume() const;
+    uint64_t last_order_number = 0;
 
 private:
     // The core hybrid data structure
@@ -28,7 +34,7 @@ private:
     void AddRestingOrder(Order* order);
     void RemoveRestingOrder(Order* order);
     // Matching logic
-    void MatchOrders();
-    void MatchWithBids(uint64_t incoming_order_id);
-    void MatchWithAsks(uint64_t incoming_order_id);
+    std::vector<Trade> MatchOrders(Order* incoming_order);
+   
+
 };

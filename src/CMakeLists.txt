@@ -28,7 +28,7 @@ target_compile_features(OrderBookLib PUBLIC cxx_std_17)
 target_link_libraries(OrderBookLib
     PUBLIC
         OrderBookHeaders
-        databento::databento
+
 )
 
 # Install the library

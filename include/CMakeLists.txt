@@ -6,6 +6,7 @@ set(ORDERBOOK_HEADERS
     OrderBook.h
     PriceLevel.h
     Types.h
+    Helpers.h
 )
 
 # Create an interface library for headers
