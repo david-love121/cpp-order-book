@@ -89,8 +89,9 @@ std::vector<Trade> OrderBook::MatchOrders(Order* incoming_order) {
         }
     } else {
         // Sell order: match against bids (buy orders), starting from highest price
-        auto bid_it = bids_.rbegin(); // Reverse iterator to start from highest price
-        while (bid_it != bids_.rend() && incoming_order->quantity > 0) {
+        // bids_ is already sorted highest-to-lowest due to std::greater<uint64_t>
+        auto bid_it = bids_.begin();
+        while (bid_it != bids_.end() && incoming_order->quantity > 0) {
             uint64_t bid_price = bid_it->first;
             PriceLevel& price_level = bid_it->second;
             
@@ -110,9 +111,7 @@ std::vector<Trade> OrderBook::MatchOrders(Order* incoming_order) {
                 
                 // If price level is empty, remove it
                 if (price_level.GetTotalVolume() == 0) {
-                    // Convert reverse iterator to regular iterator for erase
-                    auto forward_it = std::next(bid_it).base();
-                    bid_it = std::make_reverse_iterator(bids_.erase(forward_it));
+                    bid_it = bids_.erase(bid_it);
                 } else {
                     ++bid_it;
                 }
