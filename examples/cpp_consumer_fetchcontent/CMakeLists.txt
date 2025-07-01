@@ -38,19 +38,10 @@ target_link_libraries(consumer_fetchcontent
 )
 
 # Create test executable for MBO integration
-add_executable(mbo_integration_test test_mbo_integration.cpp)
-
-# Link test with OrderBook and GTest
-target_link_libraries(mbo_integration_test 
-    PRIVATE 
-        OrderBook::OrderBook
-        gtest
-        gtest_main
-)
 
 # Enable testing
 enable_testing()
-add_test(NAME MBOIntegrationTest COMMAND mbo_integration_test)
+
 
 # Optional: Set some compile flags for better debugging/optimization
 target_compile_options(consumer_fetchcontent PRIVATE

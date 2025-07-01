@@ -7,6 +7,7 @@ set(ORDERBOOK_HEADERS
     Order.h
     Trade.h
     Helpers.h
+    IClient.h
 )
 
 # Create an interface library for headers

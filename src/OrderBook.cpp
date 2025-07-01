@@ -3,6 +3,7 @@
 #include "PriceLevel.h"
 #include "Trade.h"
 #include "Helpers.h"
+#include "IClient.h"
 #include <iostream>
 #include <chrono>
 #include <algorithm>
@@ -11,12 +12,14 @@
 void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price) {
     // 1. Validate inputs
     if (quantity == 0) {
+        NotifyOrderRejected(order_id, user_id, "Order quantity must be greater than zero");
         throw std::invalid_argument("Order quantity must be greater than zero");
     }
     
     // 2. Check for existing order
     if (order_map_.count(order_id)) {
         // Handle error: duplicate order ID
+        NotifyOrderRejected(order_id, user_id, "Order ID already exists");
         throw std::runtime_error("Order ID already exists");
         return;
     }
@@ -27,11 +30,20 @@ void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint6
     Order* new_order = new Order{order_id, user_id, is_buy, quantity, price, timestamp};
 
     // 4. Match against the book
-    MatchOrders(new_order);
+    std::vector<Trade> executed_trades = MatchOrders(new_order);
+    
+    // Notify clients of executed trades
+    for (const auto& trade : executed_trades) {
+        NotifyTradeExecuted(trade);
+    }
 
     // 5. If order has remaining quantity, add it as a resting order
     if (new_order->quantity > 0) {
         AddRestingOrder(new_order);
+        // Notify clients that order was acknowledged
+        NotifyOrderAcknowledged(order_id, user_id);
+        // Notify top of book update since we added a resting order
+        NotifyTopOfBookUpdate();
     } else {
         // Order fully filled, release memory
         delete new_order;
@@ -42,11 +54,13 @@ void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint6
 void OrderBook::CancelOrder(uint64_t order_id) {
     auto it = order_map_.find(order_id);
     if (it == order_map_.end()) {
+        NotifyOrderRejected(order_id, 0, "Order ID not found");
         throw std::runtime_error("Order ID not found");
         return;
     }
 
     Order* order_to_cancel = it->second;
+    uint64_t user_id = order_to_cancel->user_id;
 
     // Check if order was already filled (parent_price_level would be null)
     if (order_to_cancel->parent_price_level != nullptr) {
@@ -59,6 +73,10 @@ void OrderBook::CancelOrder(uint64_t order_id) {
 
     // Release memory (back to the pool)
     delete order_to_cancel;
+    
+    // Notify clients
+    NotifyOrderCancelled(order_id, user_id);
+    NotifyTopOfBookUpdate();
 }
 std::vector<Trade> OrderBook::MatchOrders(Order* incoming_order) {
     std::vector<Trade> executed_trades;
@@ -226,12 +244,14 @@ void OrderBook::RemoveRestingOrder(Order* order) {
 void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price) {
     // 1. Validate inputs
     if (new_quantity == 0) {
+        NotifyOrderRejected(order_id, 0, "Modified order quantity must be greater than zero");
         throw std::invalid_argument("Modified order quantity must be greater than zero");
     }
     
     // 2. Find the existing order
     auto it = order_map_.find(order_id);
     if (it == order_map_.end()) {
+        NotifyOrderRejected(order_id, 0, "Order ID not found");
         throw std::runtime_error("Order ID not found");
     }
     
@@ -239,6 +259,7 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
     
     // 3. Check if order was already filled (parent_price_level would be null)
     if (existing_order->parent_price_level == nullptr) {
+        NotifyOrderRejected(order_id, existing_order->user_id, "Cannot modify filled order");
         throw std::runtime_error("Cannot modify filled order");
     }
     
@@ -280,19 +301,39 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
     Order* new_order = new Order{order_id, user_id, is_buy, new_quantity, new_price, new_timestamp};
     
     // Match against the book (this handles the matching logic properly)
-    MatchOrders(new_order);
+    std::vector<Trade> executed_trades = MatchOrders(new_order);
+    
+    // Notify clients of executed trades
+    for (const auto& trade : executed_trades) {
+        NotifyTradeExecuted(trade);
+    }
     
     // If order has remaining quantity, add it as a resting order
     if (new_order->quantity > 0) {
         AddRestingOrder(new_order);
+        // Notify clients that order was modified successfully
+        NotifyOrderModified(order_id, user_id, new_quantity, new_price);
     } else {
         // Order fully filled, release memory
         delete new_order;
     }
+    
+    // Notify top of book update
+    NotifyTopOfBookUpdate();
 }
 
 // OrderBook destructor - clean up all remaining orders
 OrderBook::~OrderBook() {
+    // Shutdown all clients first
+    for (const auto& [client_id, client] : clients_) {
+        try {
+            client->Shutdown();
+        } catch (const std::exception& e) {
+            std::cerr << "Error shutting down client " << client_id << ": " << e.what() << std::endl;
+        }
+    }
+    clients_.clear();
+    
     // Delete all remaining orders in the order map
     for (auto& pair : order_map_) {
         delete pair.second; // Delete the Order object
@@ -302,4 +343,102 @@ OrderBook::~OrderBook() {
     // Clear the price levels (they are value types, so this is automatic)
     bids_.clear();
     asks_.clear();
+}
+
+// Client management methods
+void OrderBook::RegisterClient(std::shared_ptr<IClient> client) {
+    if (client) {
+        clients_[client->GetClientId()] = client;
+        client->Initialize();
+    }
+}
+
+void OrderBook::UnregisterClient(uint64_t client_id) {
+    auto it = clients_.find(client_id);
+    if (it != clients_.end()) {
+        it->second->Shutdown();
+        clients_.erase(it);
+    }
+}
+
+// Client notification methods
+void OrderBook::NotifyTradeExecuted(const Trade& trade) {
+    for (const auto& [client_id, client] : clients_) {
+        try {
+            client->OnTradeExecuted(trade);
+        } catch (const std::exception& e) {
+            std::cerr << "Error notifying client " << client_id << " of trade: " << e.what() << std::endl;
+        }
+    }
+}
+
+void OrderBook::NotifyOrderAcknowledged(uint64_t order_id, uint64_t user_id) {
+    for (const auto& [client_id, client] : clients_) {
+        try {
+            client->OnOrderAcknowledged(order_id, user_id);
+        } catch (const std::exception& e) {
+            std::cerr << "Error notifying client " << client_id << " of order ack: " << e.what() << std::endl;
+        }
+    }
+}
+
+void OrderBook::NotifyOrderCancelled(uint64_t order_id, uint64_t user_id) {
+    for (const auto& [client_id, client] : clients_) {
+        try {
+            client->OnOrderCancelled(order_id, user_id);
+        } catch (const std::exception& e) {
+            std::cerr << "Error notifying client " << client_id << " of order cancel: " << e.what() << std::endl;
+        }
+    }
+}
+
+void OrderBook::NotifyOrderModified(uint64_t order_id, uint64_t user_id, uint64_t new_quantity, uint64_t new_price) {
+    for (const auto& [client_id, client] : clients_) {
+        try {
+            client->OnOrderModified(order_id, user_id, new_quantity, new_price);
+        } catch (const std::exception& e) {
+            std::cerr << "Error notifying client " << client_id << " of order modify: " << e.what() << std::endl;
+        }
+    }
+}
+
+void OrderBook::NotifyOrderRejected(uint64_t order_id, uint64_t user_id, const std::string& reason) {
+    for (const auto& [client_id, client] : clients_) {
+        try {
+            client->OnOrderRejected(order_id, user_id, reason);
+        } catch (const std::exception& e) {
+            std::cerr << "Error notifying client " << client_id << " of order rejection: " << e.what() << std::endl;
+        }
+    }
+}
+
+void OrderBook::NotifyTopOfBookUpdate() {
+    uint64_t best_bid = GetBestBid();
+    uint64_t best_ask = GetBestAsk();
+    
+    // Calculate volumes at best levels
+    uint64_t bid_volume = 0;
+    uint64_t ask_volume = 0;
+    
+    if (best_bid > 0) {
+        auto bid_it = bids_.find(best_bid);
+        if (bid_it != bids_.end()) {
+            bid_volume = bid_it->second.GetTotalVolume();
+        }
+    }
+    
+    if (best_ask > 0) {
+        auto ask_it = asks_.find(best_ask);
+        if (ask_it != asks_.end()) {
+            ask_volume = ask_it->second.GetTotalVolume();
+        }
+    }
+    
+    for (const auto& [client_id, client] : clients_) {
+        try {
+            client->OnTopOfBookUpdate(best_bid, best_ask, bid_volume, ask_volume);
+        } catch (const std::exception& e) {
+            std::cerr << "Error notifying client " << client_id << " of TOB update: " << e.what() << std::endl;
+        }
+    }
 }

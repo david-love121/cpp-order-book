@@ -54,5 +54,4 @@ install(EXPORT OrderBookTargets
 )
 
 # Demo executable for ModifyOrder functionality
-add_executable(demo_modify_order demo_modify_order.cpp)
-target_link_libraries(demo_modify_order PRIVATE OrderBookLib)
+
