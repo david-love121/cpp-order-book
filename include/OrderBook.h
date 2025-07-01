@@ -5,12 +5,23 @@
 #include <list>
 #include <atomic>
 #include <vector>
+
+#include "PriceLevel.h"
 // Forward declaration
-class PriceLevel;
 struct Order;
 struct Trade;
 class OrderBook {
 public:
+    // Constructor and destructor
+    OrderBook() = default;
+    ~OrderBook(); // Destructor to clean up remaining orders
+    
+    // Disable copy/move to avoid issues with raw pointers
+    OrderBook(const OrderBook&) = delete;
+    OrderBook& operator=(const OrderBook&) = delete;
+    OrderBook(OrderBook&&) = delete;
+    OrderBook& operator=(OrderBook&&) = delete;
+    
     // Public API for users
     void AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price);
     void CancelOrder(uint64_t order_id);
@@ -23,7 +34,6 @@ public:
 
     uint64_t GetTotalBidVolume() const;
     uint64_t GetTotalAskVolume() const;
-    uint64_t last_order_number = 0;
 
 private:
     // The core hybrid data structure

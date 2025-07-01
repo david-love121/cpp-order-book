@@ -2,10 +2,10 @@
 
 # Collect all header files
 set(ORDERBOOK_HEADERS
-    Interfaces.h
     OrderBook.h
     PriceLevel.h
-    Types.h
+    Order.h
+    Trade.h
     Helpers.h
 )
 
@@ -15,7 +15,8 @@ add_library(OrderBookHeaders INTERFACE)
 # Set the include directories for the library
 target_include_directories(OrderBookHeaders
     INTERFACE
-        ${CMAKE_CURRENT_SOURCE_DIR}
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:include/orderbook>
 )
 
 # Set C++ standard for the library

@@ -9,22 +9,27 @@
 
 // Simplified AddOrder logic for illustration
 void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price) {
-    // 1. Check for existing order
+    // 1. Validate inputs
+    if (quantity == 0) {
+        throw std::invalid_argument("Order quantity must be greater than zero");
+    }
+    
+    // 2. Check for existing order
     if (order_map_.count(order_id)) {
         // Handle error: duplicate order ID
         throw std::runtime_error("Order ID already exists");
         return;
     }
 
-    // 2. Create new order object (from a memory pool in a real implementation)
+    // 3. Create new order object (from a memory pool in a real implementation)
     // Get current Unix timestamp in microseconds for high precision
     uint64_t timestamp = Helpers::GetTimeStamp();
     Order* new_order = new Order{order_id, user_id, is_buy, quantity, price, timestamp};
 
-    // 3. Match against the book
+    // 4. Match against the book
     MatchOrders(new_order);
 
-    // 4. If order has remaining quantity, add it as a resting order
+    // 5. If order has remaining quantity, add it as a resting order
     if (new_order->quantity > 0) {
         AddRestingOrder(new_order);
     } else {
@@ -43,8 +48,11 @@ void OrderBook::CancelOrder(uint64_t order_id) {
 
     Order* order_to_cancel = it->second;
 
-    // O(1) removal from the PriceLevel's list
-    order_to_cancel->parent_price_level->RemoveOrder(order_to_cancel);
+    // Check if order was already filled (parent_price_level would be null)
+    if (order_to_cancel->parent_price_level != nullptr) {
+        // O(1) removal from the PriceLevel's list
+        order_to_cancel->parent_price_level->RemoveOrder(order_to_cancel);
+    }
 
     // O(1) removal from the main map
     order_map_.erase(it);
@@ -69,6 +77,20 @@ std::vector<Trade> OrderBook::MatchOrders(Order* incoming_order) {
                 
                 // Get trades from this price level
                 std::vector<Trade> level_trades = price_level.FillOrder(incoming_order, quantity_to_fill);
+                
+                // Clean up any filled orders from order_map
+                for (const auto& trade : level_trades) {
+                    // Check if the resting order was fully filled
+                    auto order_it = order_map_.find(trade.resting_order_id);
+                    if (order_it != order_map_.end()) {
+                        Order* resting_order = order_it->second;
+                        if (resting_order->quantity == 0) {
+                            // Order fully filled, remove from map and delete
+                            order_map_.erase(order_it);
+                            delete resting_order;
+                        }
+                    }
+                }
                 
                 // Add trades to our result
                 executed_trades.insert(executed_trades.end(), level_trades.begin(), level_trades.end());
@@ -102,6 +124,20 @@ std::vector<Trade> OrderBook::MatchOrders(Order* incoming_order) {
                 
                 // Get trades from this price level
                 std::vector<Trade> level_trades = price_level.FillOrder(incoming_order, quantity_to_fill);
+                
+                // Clean up any filled orders from order_map
+                for (const auto& trade : level_trades) {
+                    // Check if the resting order was fully filled
+                    auto order_it = order_map_.find(trade.resting_order_id);
+                    if (order_it != order_map_.end()) {
+                        Order* resting_order = order_it->second;
+                        if (resting_order->quantity == 0) {
+                            // Order fully filled, remove from map and delete
+                            order_map_.erase(order_it);
+                            delete resting_order;
+                        }
+                    }
+                }
                 
                 // Add trades to our result
                 executed_trades.insert(executed_trades.end(), level_trades.begin(), level_trades.end());
@@ -151,4 +187,119 @@ uint64_t OrderBook::GetTotalBidVolume() const {
         total_volume += bid.second.GetTotalVolume(); 
     }
     return total_volume;
+}
+
+void OrderBook::AddRestingOrder(Order* order) {
+    order_map_[order->order_id] = order;
+    
+    if (order->is_buy_side) {
+        // Add to bids
+        auto& price_level = bids_[order->price];
+        price_level.AddOrder(order);
+    } else {
+        // Add to asks  
+        auto& price_level = asks_[order->price];
+        price_level.AddOrder(order);
+    }
+}
+
+void OrderBook::RemoveRestingOrder(Order* order) {
+    // Remove from order map
+    order_map_.erase(order->order_id);
+    
+    // Remove from price level
+    if (order->parent_price_level) {
+        order->parent_price_level->RemoveOrder(order);
+        
+        // If price level is now empty, remove it from the map
+        if (order->parent_price_level->GetTotalVolume() == 0) {
+            if (order->is_buy_side) {
+                bids_.erase(order->price);
+            } else {
+                asks_.erase(order->price);
+            }
+        }
+    }
+}
+
+// Order modification logic
+void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price) {
+    // 1. Validate inputs
+    if (new_quantity == 0) {
+        throw std::invalid_argument("Modified order quantity must be greater than zero");
+    }
+    
+    // 2. Find the existing order
+    auto it = order_map_.find(order_id);
+    if (it == order_map_.end()) {
+        throw std::runtime_error("Order ID not found");
+    }
+    
+    Order* existing_order = it->second;
+    
+    // 3. Check if order was already filled (parent_price_level would be null)
+    if (existing_order->parent_price_level == nullptr) {
+        throw std::runtime_error("Cannot modify filled order");
+    }
+    
+    // 4. Store original values
+    uint64_t original_quantity = existing_order->quantity;
+    uint64_t original_price = existing_order->price;
+    bool is_buy = existing_order->is_buy_side;
+    uint64_t user_id = existing_order->user_id;
+    uint64_t timestamp = existing_order->timestamp;
+    
+    // 5. Use cancel-and-replace approach for simplicity and correctness
+    // This ensures proper time priority and matching logic
+    
+    // Store the price level reference before removing the order
+    PriceLevel* original_price_level = existing_order->parent_price_level;
+    
+    // Remove the existing order from price level and order map
+    original_price_level->RemoveOrder(existing_order);
+    order_map_.erase(it);
+    
+    // Clean up empty price level if necessary
+    if (original_price_level->GetTotalVolume() == 0) {
+        if (is_buy) {
+            bids_.erase(original_price);
+        } else {
+            asks_.erase(original_price);
+        }
+    }
+    
+    // Delete the old order
+    delete existing_order;
+    
+    // Create new order with modified parameters
+    // For quantity reductions, keep original timestamp to preserve time priority
+    // For other changes, use new timestamp
+    uint64_t new_timestamp = (new_price == original_price && new_quantity <= original_quantity) ? 
+                             timestamp : Helpers::GetTimeStamp();
+    
+    Order* new_order = new Order{order_id, user_id, is_buy, new_quantity, new_price, new_timestamp};
+    
+    // Match against the book (this handles the matching logic properly)
+    MatchOrders(new_order);
+    
+    // If order has remaining quantity, add it as a resting order
+    if (new_order->quantity > 0) {
+        AddRestingOrder(new_order);
+    } else {
+        // Order fully filled, release memory
+        delete new_order;
+    }
+}
+
+// OrderBook destructor - clean up all remaining orders
+OrderBook::~OrderBook() {
+    // Delete all remaining orders in the order map
+    for (auto& pair : order_map_) {
+        delete pair.second; // Delete the Order object
+    }
+    order_map_.clear();
+    
+    // Clear the price levels (they are value types, so this is automatic)
+    bids_.clear();
+    asks_.clear();
 }

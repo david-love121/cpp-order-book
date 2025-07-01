@@ -1,8 +1,9 @@
- #include <atomic>
-#include <chrono>
 #pragma once
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <vector>
+
 class Helpers {
  public:
     static uint64_t GenerateOrderId() {
@@ -10,8 +11,7 @@ class Helpers {
         return id_counter.fetch_add(1, std::memory_order_relaxed);
     }
     static uint64_t GenerateExecutionId() {
-        last_order_number++;
-        return last_order_number;
+        return last_order_number.fetch_add(1, std::memory_order_relaxed);
     }
     static uint64_t GetTimeStamp() {
         return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(

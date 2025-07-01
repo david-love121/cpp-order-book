@@ -1,4 +1,6 @@
+#pragma once
 #include <cstdint>
+
 struct Trade {
     uint64_t execution_id;
     uint64_t aggressor_order_id;
