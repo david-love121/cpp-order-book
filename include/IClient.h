@@ -34,6 +34,20 @@ public:
      * @param is_buy true for buy orders, false for sell orders
      * @param quantity Order quantity
      * @param price Order price in ticks
+     * @param ts_received Timestamp when order was received (nanoseconds)
+     * @param ts_executed Timestamp when order should be executed (nanoseconds)
+     * @return Order ID assigned to the new order
+     */
+    virtual uint64_t SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+                                uint64_t ts_received, uint64_t ts_executed) = 0;
+
+    /**
+     * @brief Submit a new order to the order book (legacy version without timestamps)
+     * @deprecated Use the version with timestamps for historical accuracy
+     * @param user_id User identifier submitting the order
+     * @param is_buy true for buy orders, false for sell orders
+     * @param quantity Order quantity
+     * @param price Order price in ticks
      * @return Order ID assigned to the new order
      */
     virtual uint64_t SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price) = 0;
@@ -111,9 +125,8 @@ public:
      * Called when an order is successfully added to the book.
      * 
      * @param order_id Order ID that was acknowledged
-     * @param user_id User who submitted the order
      */
-    virtual void OnOrderAcknowledged(uint64_t order_id, uint64_t user_id) = 0;
+    virtual void OnOrderAcknowledged(uint64_t order_id) = 0;
 
     /**
      * @brief Callback for order cancellations
@@ -121,9 +134,8 @@ public:
      * Called when an order is successfully cancelled.
      * 
      * @param order_id Order ID that was cancelled
-     * @param user_id User who owned the order
      */
-    virtual void OnOrderCancelled(uint64_t order_id, uint64_t user_id) = 0;
+    virtual void OnOrderCancelled(uint64_t order_id) = 0;
 
     /**
      * @brief Callback for order modifications
@@ -131,11 +143,10 @@ public:
      * Called when an order is successfully modified.
      * 
      * @param order_id Order ID that was modified
-     * @param user_id User who owns the order
      * @param new_quantity New quantity after modification
      * @param new_price New price after modification
      */
-    virtual void OnOrderModified(uint64_t order_id, uint64_t user_id, uint64_t new_quantity, uint64_t new_price) = 0;
+    virtual void OnOrderModified(uint64_t order_id, uint64_t new_quantity, uint64_t new_price) = 0;
 
     /**
      * @brief Callback for order rejections
@@ -143,10 +154,9 @@ public:
      * Called when an order operation (add/cancel/modify) is rejected.
      * 
      * @param order_id Order ID that was rejected (0 for new order rejections)
-     * @param user_id User who attempted the operation
      * @param reason Human-readable reason for rejection
      */
-    virtual void OnOrderRejected(uint64_t order_id, uint64_t user_id, const std::string& reason) = 0;
+    virtual void OnOrderRejected(uint64_t order_id, const std::string& reason) = 0;
 
     // ========== Market Data Callbacks ==========
 

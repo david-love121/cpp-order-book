@@ -17,7 +17,7 @@ using namespace databento;
  */
 class DatabentoCache {
 public:
-    DatabentoCache(const std::string& cache_dir = "databento_cache") 
+    DatabentoCache(const std::string& cache_dir = "/home/david/repos/cpp_order_book/examples/cpp_consumer_fetchcontent/databento_cache") 
         : cache_directory_(cache_dir) {
         // Create cache directory if it doesn't exist
         fs::create_directories(cache_directory_);

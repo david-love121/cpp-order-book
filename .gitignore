@@ -12,7 +12,7 @@ Makefile
 *.cmake
 !CMakeLists.txt
 _deps/
-
+/cpp_consumer_fetchcontent/test_debug_setup.sh
 # Compiled Object files
 *.o
 *.obj

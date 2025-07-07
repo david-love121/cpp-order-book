@@ -8,7 +8,8 @@ struct Order {
     bool is_buy_side;
     uint64_t quantity;
     uint64_t price;
-    uint64_t timestamp;
+    uint64_t ts_received;
+    uint64_t ts_executed;
 
     // Pointers/iterators for internal management
     //When an order needs to be cancelled, PriceLevel object is accessed through ptr and position from iterator

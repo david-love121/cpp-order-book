@@ -25,7 +25,9 @@ public:
     OrderBook& operator=(OrderBook&&) = delete;
     
     // Public API for users
-    void AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price);
+    void AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+                  uint64_t ts_received, uint64_t ts_executed);
+    void AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price); // Legacy version
     void CancelOrder(uint64_t order_id);
     void ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price);
 
@@ -58,10 +60,10 @@ private:
     
     // Client notification methods
     void NotifyTradeExecuted(const Trade& trade);
-    void NotifyOrderAcknowledged(uint64_t order_id, uint64_t user_id);
-    void NotifyOrderCancelled(uint64_t order_id, uint64_t user_id);
-    void NotifyOrderModified(uint64_t order_id, uint64_t user_id, uint64_t new_quantity, uint64_t new_price);
-    void NotifyOrderRejected(uint64_t order_id, uint64_t user_id, const std::string& reason);
+    void NotifyOrderAcknowledged(uint64_t order_id);
+    void NotifyOrderCancelled(uint64_t order_id);
+    void NotifyOrderModified(uint64_t order_id, uint64_t new_quantity, uint64_t new_price);
+    void NotifyOrderRejected(uint64_t order_id, const std::string& reason);
     void NotifyTopOfBookUpdate();
    
 

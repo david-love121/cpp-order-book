@@ -61,8 +61,8 @@ std::vector<Trade> PriceLevel::FillOrder(Order* order, uint64_t quantity) {
             top_order->user_id, // resting_user_id
             price_, // price
             fill_quantity, // quantity
-            order->timestamp, // ts_received
-            Helpers::GetTimeStamp() // ts_executed
+            order->ts_received, // ts_received (from aggressor order)
+            order->ts_executed  // ts_executed (from aggressor order - should be historical timestamp)
         };
         trades.push_back(trade);
         

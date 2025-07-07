@@ -12,22 +12,22 @@
 void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price) {
     // 1. Validate inputs
     if (quantity == 0) {
-        NotifyOrderRejected(order_id, user_id, "Order quantity must be greater than zero");
+        NotifyOrderRejected(order_id, "Order quantity must be greater than zero");
         throw std::invalid_argument("Order quantity must be greater than zero");
     }
     
     // 2. Check for existing order
     if (order_map_.count(order_id)) {
         // Handle error: duplicate order ID
-        NotifyOrderRejected(order_id, user_id, "Order ID already exists");
+        NotifyOrderRejected(order_id, "Order ID already exists");
         throw std::runtime_error("Order ID already exists");
         return;
     }
 
     // 3. Create new order object (from a memory pool in a real implementation)
-    // Get current Unix timestamp in microseconds for high precision
+    // Get current Unix timestamp in microseconds for high precision - use for both received and executed
     uint64_t timestamp = Helpers::GetTimeStamp();
-    Order* new_order = new Order{order_id, user_id, is_buy, quantity, price, timestamp};
+    Order* new_order = new Order{order_id, user_id, is_buy, quantity, price, timestamp, timestamp};
 
     // 4. Match against the book
     std::vector<Trade> executed_trades = MatchOrders(new_order);
@@ -41,7 +41,48 @@ void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint6
     if (new_order->quantity > 0) {
         AddRestingOrder(new_order);
         // Notify clients that order was acknowledged
-        NotifyOrderAcknowledged(order_id, user_id);
+        NotifyOrderAcknowledged(order_id);
+        // Notify top of book update since we added a resting order
+        NotifyTopOfBookUpdate();
+    } else {
+        // Order fully filled, release memory
+        delete new_order;
+    }
+}
+
+// Timestamp-aware AddOrder that uses historical timestamps
+void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+                        uint64_t ts_received, uint64_t ts_executed) {
+    // 1. Validate inputs
+    if (quantity == 0) {
+        NotifyOrderRejected(order_id, "Order quantity must be greater than zero");
+        throw std::invalid_argument("Order quantity must be greater than zero");
+    }
+    
+    // 2. Check for existing order
+    if (order_map_.count(order_id)) {
+        // Handle error: duplicate order ID
+        NotifyOrderRejected(order_id, "Order ID already exists");
+        throw std::runtime_error("Order ID already exists");
+        return;
+    }
+
+    // 3. Create new order object using provided timestamps
+    Order* new_order = new Order{order_id, user_id, is_buy, quantity, price, ts_received, ts_executed};
+
+    // 4. Match against the book
+    std::vector<Trade> executed_trades = MatchOrders(new_order);
+    
+    // Notify clients of executed trades
+    for (const auto& trade : executed_trades) {
+        NotifyTradeExecuted(trade);
+    }
+
+    // 5. If order has remaining quantity, add it as a resting order
+    if (new_order->quantity > 0) {
+        AddRestingOrder(new_order);
+        // Notify clients that order was acknowledged
+        NotifyOrderAcknowledged(order_id);
         // Notify top of book update since we added a resting order
         NotifyTopOfBookUpdate();
     } else {
@@ -54,7 +95,7 @@ void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint6
 void OrderBook::CancelOrder(uint64_t order_id) {
     auto it = order_map_.find(order_id);
     if (it == order_map_.end()) {
-        NotifyOrderRejected(order_id, 0, "Order ID not found");
+        NotifyOrderRejected(order_id, "Order ID not found");
         throw std::runtime_error("Order ID not found");
         return;
     }
@@ -75,7 +116,7 @@ void OrderBook::CancelOrder(uint64_t order_id) {
     delete order_to_cancel;
     
     // Notify clients
-    NotifyOrderCancelled(order_id, user_id);
+    NotifyOrderCancelled(order_id);
     NotifyTopOfBookUpdate();
 }
 std::vector<Trade> OrderBook::MatchOrders(Order* incoming_order) {
@@ -244,14 +285,14 @@ void OrderBook::RemoveRestingOrder(Order* order) {
 void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price) {
     // 1. Validate inputs
     if (new_quantity == 0) {
-        NotifyOrderRejected(order_id, 0, "Modified order quantity must be greater than zero");
+        NotifyOrderRejected(order_id, "Modified order quantity must be greater than zero");
         throw std::invalid_argument("Modified order quantity must be greater than zero");
     }
     
     // 2. Find the existing order
     auto it = order_map_.find(order_id);
     if (it == order_map_.end()) {
-        NotifyOrderRejected(order_id, 0, "Order ID not found");
+        NotifyOrderRejected(order_id, "Order ID not found");
         throw std::runtime_error("Order ID not found");
     }
     
@@ -259,7 +300,7 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
     
     // 3. Check if order was already filled (parent_price_level would be null)
     if (existing_order->parent_price_level == nullptr) {
-        NotifyOrderRejected(order_id, existing_order->user_id, "Cannot modify filled order");
+        NotifyOrderRejected(order_id, "Cannot modify filled order");
         throw std::runtime_error("Cannot modify filled order");
     }
     
@@ -268,7 +309,8 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
     uint64_t original_price = existing_order->price;
     bool is_buy = existing_order->is_buy_side;
     uint64_t user_id = existing_order->user_id;
-    uint64_t timestamp = existing_order->timestamp;
+    uint64_t ts_received = existing_order->ts_received;
+    uint64_t ts_executed = existing_order->ts_executed;
     
     // 5. Use cancel-and-replace approach for simplicity and correctness
     // This ensures proper time priority and matching logic
@@ -293,12 +335,13 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
     delete existing_order;
     
     // Create new order with modified parameters
-    // For quantity reductions, keep original timestamp to preserve time priority
-    // For other changes, use new timestamp
-    uint64_t new_timestamp = (new_price == original_price && new_quantity <= original_quantity) ? 
-                             timestamp : Helpers::GetTimeStamp();
+    // For quantity reductions, keep original timestamps to preserve time priority
+    // For other changes, use new timestamp for ts_executed
+    uint64_t new_ts_received = ts_received; // Always preserve original received time
+    uint64_t new_ts_executed = (new_price == original_price && new_quantity <= original_quantity) ? 
+                             ts_executed : Helpers::GetTimeStamp();
     
-    Order* new_order = new Order{order_id, user_id, is_buy, new_quantity, new_price, new_timestamp};
+    Order* new_order = new Order{order_id, user_id, is_buy, new_quantity, new_price, new_ts_received, new_ts_executed};
     
     // Match against the book (this handles the matching logic properly)
     std::vector<Trade> executed_trades = MatchOrders(new_order);
@@ -312,7 +355,7 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
     if (new_order->quantity > 0) {
         AddRestingOrder(new_order);
         // Notify clients that order was modified successfully
-        NotifyOrderModified(order_id, user_id, new_quantity, new_price);
+        NotifyOrderModified(order_id, new_quantity, new_price);
     } else {
         // Order fully filled, release memory
         delete new_order;
@@ -372,40 +415,40 @@ void OrderBook::NotifyTradeExecuted(const Trade& trade) {
     }
 }
 
-void OrderBook::NotifyOrderAcknowledged(uint64_t order_id, uint64_t user_id) {
+void OrderBook::NotifyOrderAcknowledged(uint64_t order_id) {
     for (const auto& [client_id, client] : clients_) {
         try {
-            client->OnOrderAcknowledged(order_id, user_id);
+            client->OnOrderAcknowledged(order_id);
         } catch (const std::exception& e) {
             std::cerr << "Error notifying client " << client_id << " of order ack: " << e.what() << std::endl;
         }
     }
 }
 
-void OrderBook::NotifyOrderCancelled(uint64_t order_id, uint64_t user_id) {
+void OrderBook::NotifyOrderCancelled(uint64_t order_id) {
     for (const auto& [client_id, client] : clients_) {
         try {
-            client->OnOrderCancelled(order_id, user_id);
+            client->OnOrderCancelled(order_id);
         } catch (const std::exception& e) {
             std::cerr << "Error notifying client " << client_id << " of order cancel: " << e.what() << std::endl;
         }
     }
 }
 
-void OrderBook::NotifyOrderModified(uint64_t order_id, uint64_t user_id, uint64_t new_quantity, uint64_t new_price) {
+void OrderBook::NotifyOrderModified(uint64_t order_id, uint64_t new_quantity, uint64_t new_price) {
     for (const auto& [client_id, client] : clients_) {
         try {
-            client->OnOrderModified(order_id, user_id, new_quantity, new_price);
+            client->OnOrderModified(order_id, new_quantity, new_price);
         } catch (const std::exception& e) {
             std::cerr << "Error notifying client " << client_id << " of order modify: " << e.what() << std::endl;
         }
     }
 }
 
-void OrderBook::NotifyOrderRejected(uint64_t order_id, uint64_t user_id, const std::string& reason) {
+void OrderBook::NotifyOrderRejected(uint64_t order_id, const std::string& reason) {
     for (const auto& [client_id, client] : clients_) {
         try {
-            client->OnOrderRejected(order_id, user_id, reason);
+            client->OnOrderRejected(order_id, reason);
         } catch (const std::exception& e) {
             std::cerr << "Error notifying client " << client_id << " of order rejection: " << e.what() << std::endl;
         }

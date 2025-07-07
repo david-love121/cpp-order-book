@@ -17,7 +17,8 @@ protected:
         order1->is_buy_side = true;
         order1->quantity = 100;
         order1->price = 10000;
-        order1->timestamp = 1000;
+        order1->ts_received = 1000;
+        order1->ts_executed = 1000;
         order1->parent_price_level = nullptr;
         order1->position_in_list = {}; // Will be set when added to price level
         
@@ -27,7 +28,8 @@ protected:
         order2->is_buy_side = true;
         order2->quantity = 150;
         order2->price = 10000;
-        order2->timestamp = 2000;
+        order2->ts_received = 2000;
+        order2->ts_executed = 2000;
         order2->parent_price_level = nullptr;
         order2->position_in_list = {}; // Will be set when added to price level
         
@@ -37,7 +39,8 @@ protected:
         order3->is_buy_side = true;
         order3->quantity = 200;
         order3->price = 10000;
-        order3->timestamp = 3000;
+        order3->ts_received = 3000;
+        order3->ts_executed = 3000;
         order3->parent_price_level = nullptr;
         order3->position_in_list = {}; // Will be set when added to price level
     }
@@ -140,7 +143,8 @@ TEST_F(PriceLevelTest, PartialFillTopOrder) {
     incoming_order.is_buy_side = false;  // Opposite side
     incoming_order.quantity = 50;       // Partial fill
     incoming_order.price = 10000;
-    incoming_order.timestamp = 5000;
+    incoming_order.ts_received = 5000;
+    incoming_order.ts_executed = 5000;
     
     std::vector<Trade> trades = price_level->FillOrder(&incoming_order, 50);
     
@@ -171,7 +175,8 @@ TEST_F(PriceLevelTest, CompleteFillTopOrder) {
     incoming_order.is_buy_side = false;
     incoming_order.quantity = 100;
     incoming_order.price = 10000;
-    incoming_order.timestamp = 5000;
+    incoming_order.ts_received = 5000;
+    incoming_order.ts_executed = 5000;
     
     std::vector<Trade> trades = price_level->FillOrder(&incoming_order, 100);
     
@@ -200,7 +205,8 @@ TEST_F(PriceLevelTest, FillQuantityLargerThanTopOrder) {
     incoming_order.is_buy_side = false;
     incoming_order.quantity = 200;  // More than first order
     incoming_order.price = 10000;
-    incoming_order.timestamp = 5000;
+    incoming_order.ts_received = 5000;
+    incoming_order.ts_executed = 5000;
     
     std::vector<Trade> trades = price_level->FillOrder(&incoming_order, 200);
     
@@ -232,7 +238,8 @@ TEST_F(PriceLevelTest, FillUntilEmpty) {
     incoming_order.is_buy_side = false;
     incoming_order.quantity = 100;
     incoming_order.price = 10000;
-    incoming_order.timestamp = 5000;
+    incoming_order.ts_received = 5000;
+    incoming_order.ts_executed = 5000;
     
     std::vector<Trade> trades = price_level->FillOrder(&incoming_order, 100);
     
@@ -244,9 +251,9 @@ TEST_F(PriceLevelTest, FillUntilEmpty) {
 // Test that orders maintain time priority (FIFO)
 TEST_F(PriceLevelTest, TimePriorityFIFO) {
     // Add orders in chronological order
-    price_level->AddOrder(order1.get());  // timestamp 1000
-    price_level->AddOrder(order2.get());  // timestamp 2000
-    price_level->AddOrder(order3.get());  // timestamp 3000
+    price_level->AddOrder(order1.get());  // ts_received 1000
+    price_level->AddOrder(order2.get());  // ts_received 2000
+    price_level->AddOrder(order3.get());  // ts_received 3000
     
     // Fill part of the level
     Order incoming_order;
@@ -255,14 +262,15 @@ TEST_F(PriceLevelTest, TimePriorityFIFO) {
     incoming_order.is_buy_side = false;
     incoming_order.quantity = 150;  // Should fill order1 completely and part of order2
     incoming_order.price = 10000;
-    incoming_order.timestamp = 5000;
+    incoming_order.ts_received = 5000;
+    incoming_order.ts_executed = 5000;
     
     std::vector<Trade> trades = price_level->FillOrder(&incoming_order, 150);
     
     // Should have two trades in time priority order
     EXPECT_EQ(trades.size(), 2);
     if (trades.size() >= 2) {
-        // First trade should be with order1 (earliest timestamp)
+        // First trade should be with order1 (earliest ts_received)
         EXPECT_EQ(trades[0].resting_order_id, order1->order_id);
         EXPECT_EQ(trades[0].quantity, 100);
         
