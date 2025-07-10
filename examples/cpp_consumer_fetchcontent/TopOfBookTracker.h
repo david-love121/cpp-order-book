@@ -37,9 +37,9 @@ class TopOfBookTracker {
 private:
     std::string csv_filename_;
     std::ofstream csv_file_;
-    bool csv_enabled_;
     std::string symbol_;
     std::string date_range_;
+    bool csv_enabled_;
     
     // Helper methods
     void WriteCSVHeader();

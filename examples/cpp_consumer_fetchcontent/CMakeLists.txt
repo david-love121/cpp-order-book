@@ -33,6 +33,7 @@ add_executable(consumer_fetchcontent
     DatabentoMboClient.cpp
     OrderBookManager.cpp
     PortfolioManager.cpp
+    Strategy.cpp
     TopOfBookTracker.cpp
 )
 

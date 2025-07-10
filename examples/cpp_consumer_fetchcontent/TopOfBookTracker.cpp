@@ -38,6 +38,7 @@ TopOfBookTracker::TopOfBookTracker(const std::string& symbol, const std::string&
 
 TopOfBookTracker::~TopOfBookTracker() {
     if (csv_file_.is_open()) {
+        csv_file_.flush(); // Ensure all data is written
         csv_file_.close();
     }
 }
@@ -126,7 +127,12 @@ void TopOfBookTracker::WriteSnapshotToCSV(const TOBSnapshot& snapshot) {
               << snapshot.ask_volume << ","
               << std::fixed << std::setprecision(2) << snapshot.mid_price << ","
               << std::fixed << std::setprecision(2) << snapshot.spread << "\n";
-    csv_file_.flush();
+    
+    // Flush periodically for better performance (every 10th write)
+    static int write_count = 0;
+    if (++write_count % 10 == 0) {
+        csv_file_.flush();
+    }
 }
 
 void TopOfBookTracker::OnTopOfBookUpdate(uint64_t timestamp, const std::string& symbol, 
