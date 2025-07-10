@@ -29,13 +29,17 @@ FetchContent_MakeAvailable(OrderBook databento)
 
 # Create the consumer executable
 add_executable(consumer_fetchcontent 
-    main.cpp
-    DatabentoMboClient.cpp
-    OrderBookManager.cpp
-    PortfolioManager.cpp
-    Strategy.cpp
-    TopOfBookTracker.cpp
+    src/main.cpp
+    src/DatabentoMboClient.cpp
+    src/OrderBookManager.cpp
+    src/PortfolioManager.cpp
+    src/Strategy.cpp
+    src/OrderImbalanceStrategy.cpp
+    src/TopOfBookTracker.cpp
 )
+
+# Add include directories
+target_include_directories(consumer_fetchcontent PRIVATE include)
 
 # Link with both OrderBook and Databento libraries
 target_link_libraries(consumer_fetchcontent 

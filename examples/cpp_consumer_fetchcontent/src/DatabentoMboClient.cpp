@@ -222,6 +222,9 @@ void DatabentoMboClient::OnTopOfBookUpdate(uint64_t best_bid, uint64_t best_ask,
     tob_tracker_->OnTopOfBookUpdate(timestamp, symbol_to_use, best_bid,
                                     best_ask, bid_volume, ask_volume);
   }
+
+  // Call virtual callback method for subclasses to override
+  OnTopOfBookCallback(best_bid, best_ask, bid_volume, ask_volume);
 }
 
 void DatabentoMboClient::Initialize() {

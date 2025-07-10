@@ -1,35 +1,19 @@
-#include "Strategy.h"
+#include "IStrategy.h"
 #include "PortfolioManager.h"
 #include "TopOfBookTracker.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
-#include <numeric>
 
 // Strategy base class implementation
 
-Strategy::Strategy(const std::string &name, uint64_t user_id,
-                   MathFunction math_func,
-                   std::shared_ptr<PortfolioManager> portfolio_mgr)
+Strategy::Strategy(const std::string &name, uint64_t user_id)
     : name_(name), user_id_(user_id), enabled_(true), signal_threshold_(0.1),
-      base_quantity_(1), portfolio_manager_(portfolio_mgr),
-      math_function_(math_func) {
+      base_quantity_(1), portfolio_manager_(nullptr) {
 
   // Set default parameters
   parameters_["max_position"] = 100.0;
   parameters_["risk_multiplier"] = 1.0;
-}
-
-StrategyAction Strategy::ProcessMarketData(const MarketSnapshot &snapshot) {
-  if (!enabled_ || !math_function_) {
-    return StrategyAction(StrategySignal::NONE, 0, 0.0);
-  }
-
-  // Calculate signal using mathematical function
-  double signal_value = math_function_(snapshot);
-
-  // Convert signal to action
-  return SignalToAction(signal_value);
 }
 
 StrategyAction Strategy::OnTopOfBookUpdate(const TOBSnapshot &tob_snapshot) {
@@ -41,10 +25,69 @@ StrategyAction Strategy::OnTopOfBookUpdate(const TOBSnapshot &tob_snapshot) {
   return ProcessMarketData(market_snapshot);
 }
 
-double Strategy::GetParameter(const std::string &key,
-                              double default_value) const {
+void Strategy::Initialize(const std::unordered_map<std::string, double> &parameters) {
+  parameters_ = parameters;
+}
+
+void Strategy::Reset() {
+  // Reset to default state
+  enabled_ = true;
+  signal_threshold_ = 0.1;
+  base_quantity_ = 1;
+  
+  // Reset to default parameters
+  parameters_.clear();
+  parameters_["max_position"] = 100.0;
+  parameters_["risk_multiplier"] = 1.0;
+}
+
+void Strategy::SetEnabled(bool enabled) {
+  enabled_ = enabled;
+}
+
+void Strategy::SetPortfolioManager(std::shared_ptr<PortfolioManager> portfolio_mgr) {
+  portfolio_manager_ = portfolio_mgr;
+}
+
+const std::string &Strategy::GetName() const {
+  return name_;
+}
+
+uint64_t Strategy::GetUserId() const {
+  return user_id_;
+}
+
+bool Strategy::IsEnabled() const {
+  return enabled_;
+}
+
+std::shared_ptr<PortfolioManager> Strategy::GetPortfolioManager() const {
+  return portfolio_manager_;
+}
+
+void Strategy::SetParameter(const std::string &key, double value) {
+  parameters_[key] = value;
+}
+
+double Strategy::GetParameter(const std::string &key, double default_value) const {
   auto it = parameters_.find(key);
   return (it != parameters_.end()) ? it->second : default_value;
+}
+
+void Strategy::SetSignalThreshold(double threshold) {
+  signal_threshold_ = threshold;
+}
+
+double Strategy::GetSignalThreshold() const {
+  return signal_threshold_;
+}
+
+void Strategy::SetBaseQuantity(uint64_t quantity) {
+  base_quantity_ = quantity;
+}
+
+uint64_t Strategy::GetBaseQuantity() const {
+  return base_quantity_;
 }
 
 StrategyAction Strategy::SignalToAction(double signal_value) {
@@ -87,89 +130,11 @@ StrategyAction Strategy::SignalToAction(double signal_value) {
   return StrategyAction(signal, quantity, abs_signal);
 }
 
-// OrderImbalanceStrategy implementation
-
-OrderImbalanceStrategy::OrderImbalanceStrategy(
-    uint64_t user_id, std::shared_ptr<PortfolioManager> portfolio_mgr,
-    double lookback_period)
-    : Strategy("OrderImbalance", user_id, CreateOrderImbalanceFunction(0.1),
-               portfolio_mgr),
-      lookback_period_(lookback_period) {
-
-  // Set strategy-specific parameters
-  SetParameter("imbalance_threshold", 0.1);
-  SetParameter("momentum_factor", 1.5);
-  SetParameter("decay_factor", 0.95);
-}
-
-MathFunction
-OrderImbalanceStrategy::CreateOrderImbalanceFunction(double threshold) {
-  return [threshold](const MarketSnapshot &snapshot) -> double {
-    // Basic order imbalance calculation
-    double imbalance = snapshot.order_imbalance;
-
-    // Apply threshold and scaling
-    if (std::abs(imbalance) < threshold) {
-      return 0.0; // Not enough imbalance to act
-    }
-
-    // Scale imbalance to signal strength
-    // Strong imbalance (>0.5) gets full signal, moderate imbalance gets partial
-    double signal_strength = std::min(1.0, std::abs(imbalance) / 0.5);
-
-    // Return signal in direction of imbalance
-    return (imbalance > 0) ? signal_strength : -signal_strength;
-  };
-}
-
-// MeanReversionStrategy implementation
-
-MeanReversionStrategy::MeanReversionStrategy(
-    uint64_t user_id, std::shared_ptr<PortfolioManager> portfolio_mgr,
-    double lookback_period)
-    : Strategy("MeanReversion", user_id, CreateMeanReversionFunction(2.0),
-               portfolio_mgr),
-      lookback_period_(lookback_period) {
-
-  // Set strategy-specific parameters
-  SetParameter("std_dev_threshold", 2.0);
-  SetParameter("mean_revert_factor", 0.8);
-  SetParameter("max_lookback", lookback_period);
-}
-
-MathFunction
-MeanReversionStrategy::CreateMeanReversionFunction(double std_dev_threshold) {
-  return [std_dev_threshold](const MarketSnapshot &snapshot) -> double {
-    // For this simple implementation, we'll use the spread as a proxy for mean
-    // reversion In a real implementation, you'd maintain price history and
-    // calculate moving averages
-
-    double mid_price = snapshot.mid_price;
-    double spread = snapshot.spread;
-
-    if (mid_price <= 0 || spread <= 0) {
-      return 0.0;
-    }
-
-    // Use spread as a proxy for volatility
-    // When spread is wide, assume mean reversion opportunity
-    double spread_ratio = spread / mid_price;
-
-    // If spread is unusually wide (>0.1% of mid price), signal mean reversion
-    if (spread_ratio > 0.001) {
-      // Signal to buy at bid (sell signal) if spread is wide
-      // This is a simplified mean reversion signal
-      return -std::min(1.0, spread_ratio * 1000.0);
-    }
-
-    return 0.0;
-  };
-}
 
 // StrategyManager implementation
 
 void StrategyManager::AddStrategy(uint64_t user_id,
-                                  std::shared_ptr<Strategy> strategy) {
+                                  std::shared_ptr<IStrategy> strategy) {
   if (!strategy) {
     return;
   }
@@ -201,7 +166,7 @@ void StrategyManager::RemoveStrategy(uint64_t user_id) {
   }
 }
 
-std::shared_ptr<Strategy> StrategyManager::GetStrategy(uint64_t user_id) const {
+std::shared_ptr<IStrategy> StrategyManager::GetStrategy(uint64_t user_id) const {
   auto it = user_strategies_.find(user_id);
   return (it != user_strategies_.end()) ? it->second : nullptr;
 }

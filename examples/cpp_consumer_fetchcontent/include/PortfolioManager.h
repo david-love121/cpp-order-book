@@ -13,7 +13,7 @@
 
 // Forward declarations
 struct Trade;
-class Strategy;
+class IStrategy;
 class StrategyManager;
 
 struct TrackedOrder {
@@ -103,7 +103,7 @@ public:
 
   // Strategy integration
   void SetStrategyManager(std::shared_ptr<StrategyManager> strategy_mgr);
-  void SetUserStrategy(std::shared_ptr<Strategy> strategy);
+  void SetUserStrategy(std::shared_ptr<IStrategy> strategy);
 
   // Utility methods
   void PrintPortfolioSummary() const;
@@ -165,7 +165,7 @@ private:
 
   // Strategy integration
   std::shared_ptr<StrategyManager> strategy_manager_;
-  std::shared_ptr<Strategy> user_strategy_;
+  std::shared_ptr<IStrategy> user_strategy_;
 
   // Helper methods
   void TakeSnapshot(uint64_t timestamp = 0);

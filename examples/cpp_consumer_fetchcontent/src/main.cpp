@@ -23,6 +23,7 @@
 #include "PortfolioManager.h"
 #include "DatabentoMboClient.h"
 #include "OrderBookManager.h"
+#include "OrderImbalanceStrategy.h"
 
 // Include Databento headers
 #include <databento/live.hpp>
@@ -33,6 +34,39 @@
 
 using namespace databento;
 
+// Function to load environment variables from .env file
+void loadEnvFile(const std::string& filename = ".env") {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cout << "[ENV] .env file not found: " << filename << std::endl;
+        return;
+    }
+    
+    std::string line;
+    while (std::getline(file, line)) {
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == '#') continue;
+        
+        // Find the = separator
+        size_t pos = line.find('=');
+        if (pos == std::string::npos) continue;
+        
+        std::string key = line.substr(0, pos);
+        std::string value = line.substr(pos + 1);
+        
+        // Remove leading/trailing whitespace
+        key.erase(0, key.find_first_not_of(" \t"));
+        key.erase(key.find_last_not_of(" \t") + 1);
+        value.erase(0, value.find_first_not_of(" \t"));
+        value.erase(value.find_last_not_of(" \t") + 1);
+        
+        // Set environment variable
+        if (setenv(key.c_str(), value.c_str(), 1) == 0) {
+            std::cout << "[ENV] Loaded: " << key << std::endl;
+        }
+    }
+    file.close();
+}
 
 void runLiveDataDemo() {
     std::cout << "\n=== Live Market Data Demo ===" << std::endl;
@@ -86,10 +120,12 @@ void runHistoricalDataDemo() {
     
     // Check if API key is available
     const char* api_key = std::getenv("DATABENTO_API_KEY");
-    if (!api_key || strlen(api_key) == 0) {
-        std::cout << "No DATABENTO_API_KEY found. Skipping historical data demo." << std::endl;
-        std::cout << "To run this demo, set your API key: export DATABENTO_API_KEY=your_key_here" << std::endl;
-        return;
+    bool has_api_key = (api_key && strlen(api_key) > 0);
+    
+    if (!has_api_key) {
+        std::cout << "No DATABENTO_API_KEY found. Will use cached data only." << std::endl;
+    } else {
+        std::cout << "API key found. Will use cached data or fetch if needed." << std::endl;
     }
     
     try {
@@ -111,14 +147,51 @@ void runHistoricalDataDemo() {
         std::cout << "Cache file: " << cache_file_path << std::endl;
         cache.listCache();
         
-        // Initialize with 2ms slippage for historical data simulation
-        OrderBookManager manager(2000000);  // 2ms slippage delay
+        // Initialize with 2ms slippage for historical data simulation, tracking user 1000
+        uint64_t tracked_user_id = 1000;
+        OrderBookManager manager(2000000, tracked_user_id);  // 2ms slippage delay, user 1000
         
         std::cout << "Fetching historical MBO data for ES S&P 500 futures..." << std::endl;
         std::cout << "Dataset: GLBX.MDP3 (CME Globex)" << std::endl;
         std::cout << "Schema: MBO (Market By Order) - Full order book depth" << std::endl;
         std::cout << "Symbol: ESU4 (E-mini S&P 500 futures December 2024)" << std::endl;
         std::cout << "Time range: " << start_time << " to " << end_time << " (UTC)" << std::endl;
+        
+        // Set up OrderImbalanceStrategy for historical data analysis
+        std::cout << "\n=== Setting up OrderImbalanceStrategy for Historical Analysis ===" << std::endl;
+        auto client = std::dynamic_pointer_cast<DatabentoMboClient>(manager.GetClient());
+        if (client) {
+            auto portfolio = client->GetPortfolioManager();
+            if (portfolio) {
+                portfolio->EnablePeriodicSnapshots(1000000000); // 1s intervals for historical data
+                
+                // Create OrderImbalanceStrategy optimized for historical analysis
+                auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
+                    "Historical_OrderImbalance", 
+                    tracked_user_id, 
+                    0.10,  // 10% imbalance threshold for real market data
+                    30     // 30-snapshot lookback window for more data
+                );
+                
+                // Configure strategy parameters for historical analysis
+                order_imbalance_strategy->SetSignalThreshold(0.05);  // 5% signal threshold
+                order_imbalance_strategy->SetBaseQuantity(5);        // 5 contracts for trading
+                order_imbalance_strategy->SetMomentumFactor(1.2);    // Conservative momentum
+                order_imbalance_strategy->SetDecayFactor(0.98);      // Slower decay for analysis
+                
+                // Enable auto-trading with appropriate settings
+                order_imbalance_strategy->SetOrderClient(client);    // Provide client for order placement
+                order_imbalance_strategy->EnableAutoTrading(true);   // Enable auto-trading
+                order_imbalance_strategy->SetMinSignalForTrade(0.05); // 5% minimum signal for trading
+                order_imbalance_strategy->SetMinOrderInterval(1000000000); // 1 second between orders
+                order_imbalance_strategy->SetMaxOrdersPerMinute(10); // Max 10 orders per minute
+                
+                // Integrate strategy with OrderBookManager
+                manager.SetStrategy(order_imbalance_strategy);
+                std::cout << "OrderImbalanceStrategy integrated with OrderBookManager for historical analysis" << std::endl;
+                std::cout << "Auto-trading ENABLED - Strategy will place orders on strong signals (>5%)" << std::endl;
+            }
+        }
         
         manager.Start();
         
@@ -163,6 +236,16 @@ void runHistoricalDataDemo() {
             dbn_store.Replay(metadata_callback, record_callback);
             std::cout << "Replay completed. Total records processed: " << record_count << std::endl;
         } else {
+            if (!has_api_key) {
+                std::cout << "\n[ERROR] No cached data found and no API key available." << std::endl;
+                std::cout << "Cannot fetch fresh data without API key." << std::endl;
+                std::cout << "Please either:" << std::endl;
+                std::cout << "1. Set DATABENTO_API_KEY environment variable" << std::endl;
+                std::cout << "2. Or run with an API key first to cache data" << std::endl;
+                manager.Stop();
+                return;
+            }
+            
             std::cout << "\n[API] Fetching fresh data from Databento API..." << std::endl;
             std::cout << "This will process real order book messages and build a live order book simulation." << std::endl;
             
@@ -262,6 +345,27 @@ void runBasicOrderBookDemo() {
         portfolio->EnablePeriodicSnapshots(100000000); // 100ms intervals for demo
     }
 
+    // Create and configure OrderImbalanceStrategy
+    std::cout << "\n=== Setting up OrderImbalanceStrategy ===" << std::endl;
+    auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
+        "HFT_OrderImbalance", 
+        tracked_user_id, 
+        0.12,  // 12% imbalance threshold
+        15     // 15-snapshot lookback window
+    );
+    
+    // Configure strategy parameters for high-frequency trading
+    order_imbalance_strategy->SetSignalThreshold(0.08);  // 8% signal threshold
+    order_imbalance_strategy->SetBaseQuantity(25);       // 25 contracts base quantity
+    order_imbalance_strategy->SetMomentumFactor(1.8);    // Higher momentum factor
+    order_imbalance_strategy->SetDecayFactor(0.92);      // Faster decay for HFT
+    
+    // Integrate strategy with portfolio manager
+    if (portfolio) {
+        portfolio->SetUserStrategy(order_imbalance_strategy);
+        std::cout << "OrderImbalanceStrategy integrated with PortfolioManager for user " << tracked_user_id << std::endl;
+    }
+
     try {
         std::cout << "\n=== Scenario 1: +$100 Profit ===" << std::endl;
         std::cout << "Tracked user buys 100 contracts at $50.00 and sells at $51.00" << std::endl;
@@ -348,6 +452,9 @@ int main() {
     std::cout << "3. Integration with various market data feeds" << std::endl;
     std::cout << "4. Proper encapsulation separating data processing from order book logic" << std::endl;
     
+    // Load environment variables from .env file
+    loadEnvFile();
+    
     // Check API key status
     const char* api_key = std::getenv("DATABENTO_API_KEY");
     if (api_key && strlen(api_key) > 0) {
@@ -360,7 +467,7 @@ int main() {
     // Always run the basic demo to show client interface and single-user portfolio tracking
     runBasicOrderBookDemo();
     
-    // Try to run historical demo if API key is available  
+    // Try to run historical demo - will use cached data if no API key
     runHistoricalDataDemo();
     
     return 0;

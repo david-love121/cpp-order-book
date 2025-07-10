@@ -1,6 +1,6 @@
 #include "PortfolioManager.h"
-#include "../../include/Trade.h"
-#include "Strategy.h"
+#include "Trade.h"
+#include "IStrategy.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -453,7 +453,7 @@ void PortfolioManager::SetStrategyManager(
   std::cout << "[PORTFOLIO] Strategy manager set" << std::endl;
 }
 
-void PortfolioManager::SetUserStrategy(std::shared_ptr<Strategy> strategy) {
+void PortfolioManager::SetUserStrategy(std::shared_ptr<IStrategy> strategy) {
   if (strategy && strategy->GetUserId() != TRACKED_USER_ID) {
     std::cout << "[PORTFOLIO] Warning: Strategy user ID ("
               << strategy->GetUserId() << ") does not match tracked user ID ("

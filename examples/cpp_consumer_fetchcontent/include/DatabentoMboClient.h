@@ -101,6 +101,18 @@ public:
   void OnTopOfBookUpdate(uint64_t best_bid, uint64_t best_ask,
                          uint64_t bid_volume, uint64_t ask_volume) override;
 
+  /**
+   * @brief Virtual callback method for TOB updates - can be overridden by subclasses
+   * @param best_bid Best bid price in ticks
+   * @param best_ask Best ask price in ticks  
+   * @param bid_volume Volume at best bid
+   * @param ask_volume Volume at best ask
+   */
+  virtual void OnTopOfBookCallback(uint64_t best_bid, uint64_t best_ask,
+                                   uint64_t bid_volume, uint64_t ask_volume) {
+    (void)best_bid; (void)best_ask; (void)bid_volume; (void)ask_volume;
+  };
+
   void Initialize() override;
   void Shutdown() override;
   uint64_t GetClientId() const override;
@@ -145,6 +157,11 @@ public:
    * @return KeepGoing::Continue to continue processing, KeepGoing::Stop to stop
    */
   KeepGoing ProcessMarketData(const Record &rec);
+
+protected:
+  // Protected getters for derived classes
+  const std::string& GetCurrentSymbol() const { return current_symbol_; }
+  uint64_t GetLastMboTimestamp() const { return last_mbo_timestamp_; }
 
 private:
   uint64_t GenerateOrderId();
