@@ -88,8 +88,8 @@ void runLiveDataDemo() {
                           .SetDataset(Dataset::GlbxMdp3)
                           .BuildThreaded();
         
-        auto handler = [&manager](const Record& rec) {
-            return manager.OnMarketData(rec);
+        auto handler = [&manager](const Record& rec) -> KeepGoing {
+            return manager.ProcessMarketData(rec);
         };
         
         std::cout << "Starting live data stream for ES futures..." << std::endl;
@@ -219,7 +219,7 @@ void runHistoricalDataDemo() {
                     std::cout << "Processing record #" << record_count 
                               << " (type: " << static_cast<int>(record.RType()) << ")" << std::endl;
                 }
-                KeepGoing result = manager.OnMarketData(record);
+                KeepGoing result = manager.ProcessMarketData(record);
                 
                 // Log first few records for debugging
                 if (record_count <= 5) {
@@ -279,7 +279,7 @@ void runHistoricalDataDemo() {
                         std::cout << "Processing record #" << record_count 
                                   << " (type: " << static_cast<int>(record.RType()) << ")" << std::endl;
                     }
-                    KeepGoing result = manager.OnMarketData(record);
+                    KeepGoing result = manager.ProcessMarketData(record);
                     
                     // Log first few records for debugging
                     if (record_count <= 5) {

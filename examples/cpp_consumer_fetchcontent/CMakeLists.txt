@@ -31,6 +31,7 @@ FetchContent_MakeAvailable(OrderBook databento)
 add_executable(consumer_fetchcontent 
     src/main.cpp
     src/DatabentoMboClient.cpp
+    src/DatabentoProcessor.cpp
     src/OrderBookManager.cpp
     src/PortfolioManager.cpp
     src/Strategy.cpp
