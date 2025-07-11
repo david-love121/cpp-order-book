@@ -21,9 +21,9 @@
 #include "IClient.h"
 #include "DatabentoCache.h"
 #include "PortfolioManager.h"
-#include "DatabentoMboClient.h"
 #include "OrderBookManager.h"
 #include "OrderImbalanceStrategy.h"
+#include "DatabentoProcessor.h"
 
 // Include Databento headers
 #include <databento/live.hpp>
@@ -36,9 +36,30 @@ using namespace databento;
 
 // Function to load environment variables from .env file
 void loadEnvFile(const std::string& filename = ".env") {
-    std::ifstream file(filename);
+    std::vector<std::string> search_paths = {
+        filename,                                           // Current working directory
+        "../" + filename,                                   // Parent directory (for build/)
+        "../../" + filename,                               // For nested build directories
+        std::string(__FILE__).substr(0, std::string(__FILE__).find_last_of("/")) + "/../" + filename  // Relative to source file
+    };
+    
+    std::ifstream file;
+    std::string found_path;
+    
+    for (const auto& path : search_paths) {
+        file.open(path);
+        if (file.is_open()) {
+            found_path = path;
+            std::cout << "[ENV] Found .env file at: " << path << std::endl;
+            break;
+        }
+    }
+    
     if (!file.is_open()) {
-        std::cout << "[ENV] .env file not found: " << filename << std::endl;
+        std::cout << "[ENV] .env file not found in any of these locations:" << std::endl;
+        for (const auto& path : search_paths) {
+            std::cout << "[ENV]   " << path << std::endl;
+        }
         return;
     }
     
@@ -81,15 +102,22 @@ void runLiveDataDemo() {
     
     try {
         // Initialize with 500 microseconds slippage for live data
-        OrderBookManager manager(500000);  // 0.5ms slippage delay
+        auto manager = std::make_shared<OrderBookManager>(500000);  // 0.5ms slippage delay
+        
+        // Create and configure Databento processor
+        auto databento_processor = std::make_shared<DatabentoProcessor>();
+        manager->SetDataProcessor(databento_processor);
+        
+        // Initialize the manager after shared_ptr is fully constructed
+        manager->InitializeAfterConstruction();
         
         auto client = LiveBuilder{}
                           .SetKeyFromEnv()
                           .SetDataset(Dataset::GlbxMdp3)
                           .BuildThreaded();
         
-        auto handler = [&manager](const Record& rec) -> KeepGoing {
-            return manager.ProcessMarketData(rec);
+        auto handler = [&databento_processor](const Record& rec) -> KeepGoing {
+            return databento_processor->ProcessMarketData(rec);
         };
         
         std::cout << "Starting live data stream for ES futures..." << std::endl;
@@ -101,13 +129,15 @@ void runLiveDataDemo() {
         client.Subscribe({"ES.FUT"}, Schema::Trades, SType::Parent);
         client.Subscribe({"ES.FUT"}, Schema::Mbp1, SType::Parent);
         
-        manager.Start();
+        manager->Start();
+
         client.Start(handler);
         
         // Run for 30 seconds
         std::this_thread::sleep_for(std::chrono::seconds{30});
         
-        manager.Stop();
+
+        manager->Stop();
         std::cout << "Live data demo completed." << std::endl;
         
     } catch (const std::exception& e) {
@@ -149,7 +179,16 @@ void runHistoricalDataDemo() {
         
         // Initialize with 2ms slippage for historical data simulation, tracking user 1000
         uint64_t tracked_user_id = 1000;
-        OrderBookManager manager(2000000, tracked_user_id);  // 2ms slippage delay, user 1000
+        uint64_t slippage_delay_ns_ = 2000000; // 2ms
+        auto manager = std::make_shared<OrderBookManager>(slippage_delay_ns_, tracked_user_id);  // 2ms slippage delay, user 1000
+
+        // Create and configure Databento processor
+   
+        auto databento_processor = std::make_shared<DatabentoProcessor>();
+        manager->SetDataProcessor(databento_processor);
+        
+        // Initialize the manager after shared_ptr is fully constructed
+        manager->InitializeAfterConstruction();
         
         std::cout << "Fetching historical MBO data for ES S&P 500 futures..." << std::endl;
         std::cout << "Dataset: GLBX.MDP3 (CME Globex)" << std::endl;
@@ -159,41 +198,34 @@ void runHistoricalDataDemo() {
         
         // Set up OrderImbalanceStrategy for historical data analysis
         std::cout << "\n=== Setting up OrderImbalanceStrategy for Historical Analysis ===" << std::endl;
-        auto client = std::dynamic_pointer_cast<DatabentoMboClient>(manager.GetClient());
-        if (client) {
-            auto portfolio = client->GetPortfolioManager();
-            if (portfolio) {
-                portfolio->EnablePeriodicSnapshots(1000000000); // 1s intervals for historical data
-                
-                // Create OrderImbalanceStrategy optimized for historical analysis
-                auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
-                    "Historical_OrderImbalance", 
-                    tracked_user_id, 
-                    0.10,  // 10% imbalance threshold for real market data
-                    30     // 30-snapshot lookback window for more data
-                );
-                
-                // Configure strategy parameters for historical analysis
-                order_imbalance_strategy->SetSignalThreshold(0.05);  // 5% signal threshold
-                order_imbalance_strategy->SetBaseQuantity(5);        // 5 contracts for trading
-                order_imbalance_strategy->SetMomentumFactor(1.2);    // Conservative momentum
-                order_imbalance_strategy->SetDecayFactor(0.98);      // Slower decay for analysis
-                
-                // Enable auto-trading with appropriate settings
-                order_imbalance_strategy->SetOrderClient(client);    // Provide client for order placement
-                order_imbalance_strategy->EnableAutoTrading(true);   // Enable auto-trading
-                order_imbalance_strategy->SetMinSignalForTrade(0.05); // 5% minimum signal for trading
-                order_imbalance_strategy->SetMinOrderInterval(1000000000); // 1 second between orders
-                order_imbalance_strategy->SetMaxOrdersPerMinute(10); // Max 10 orders per minute
-                
-                // Integrate strategy with OrderBookManager
-                manager.SetStrategy(order_imbalance_strategy);
-                std::cout << "OrderImbalanceStrategy integrated with OrderBookManager for historical analysis" << std::endl;
-                std::cout << "Auto-trading ENABLED - Strategy will place orders on strong signals (>5%)" << std::endl;
-            }
+        auto client = manager->GetClient();
+        auto portfolio = manager->GetPortfolioManager();
+
+        if (client && portfolio) {
+            portfolio->EnablePeriodicSnapshots(1000000000); // 1s intervals for historical data
         }
-        
-        manager.Start();
+        auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
+                "Historical_OrderImbalance",
+                tracked_user_id,
+                0.10,  // 10% imbalance threshold for real market data
+                30     // 30-snapshot lookback window for more data
+            );
+
+            // Configure strategy parameters for historical analysis
+            order_imbalance_strategy->SetSignalThreshold(0.05);  // 5% signal threshold
+            order_imbalance_strategy->SetBaseQuantity(5);        // 5 contracts for trading
+            order_imbalance_strategy->SetMomentumFactor(1.2);    // Conservative momentum
+            order_imbalance_strategy->SetDecayFactor(0.98);      // Slower decay for analysis
+            order_imbalance_strategy->SetSlippageDelay(slippage_delay_ns_); // 2ms slippage to match manager
+            // Enable auto-trading with appropriate settings
+
+            order_imbalance_strategy->EnableAutoTrading(true);   // Enable auto-trading
+            order_imbalance_strategy->SetMinSignalForTrade(0.05); // 5% minimum signal for trading
+            order_imbalance_strategy->SetMinOrderInterval(1000000000); // 1 second between orders
+            order_imbalance_strategy->SetMaxOrdersPerMinute(10); // Max 10 orders per minute
+        manager->Start();
+
+        std::cout << "OrderBookManager and DatabentoProcessor started successfully" << std::endl;
         
         // Check if we have cached data
         if (cache.hasCachedData(cache_key)) { // Historical data never expires
@@ -213,13 +245,13 @@ void runHistoricalDataDemo() {
             };
             
             int record_count = 0;
-            auto record_callback = [&manager, &record_count](const Record& record) -> KeepGoing {
+            auto record_callback = [&databento_processor, &record_count](const Record& record) -> KeepGoing {
                 record_count++;
                 if (record_count % 100 == 0) {
                     std::cout << "Processing record #" << record_count 
                               << " (type: " << static_cast<int>(record.RType()) << ")" << std::endl;
                 }
-                KeepGoing result = manager.ProcessMarketData(record);
+                KeepGoing result = databento_processor->ProcessMarketData(record);
                 
                 // Log first few records for debugging
                 if (record_count <= 5) {
@@ -242,7 +274,7 @@ void runHistoricalDataDemo() {
                 std::cout << "Please either:" << std::endl;
                 std::cout << "1. Set DATABENTO_API_KEY environment variable" << std::endl;
                 std::cout << "2. Or run with an API key first to cache data" << std::endl;
-                manager.Stop();
+                manager->Stop();
                 return;
             }
             
@@ -273,13 +305,13 @@ void runHistoricalDataDemo() {
                 };
                 
                 int record_count = 0;
-                auto record_callback = [&manager, &record_count](const Record& record) -> KeepGoing {
+                auto record_callback = [&databento_processor, &record_count](const Record& record) -> KeepGoing {
                     record_count++;
                     if (record_count % 100 == 0) {
                         std::cout << "Processing record #" << record_count 
                                   << " (type: " << static_cast<int>(record.RType()) << ")" << std::endl;
                     }
-                    KeepGoing result = manager.ProcessMarketData(record);
+                    KeepGoing result = databento_processor->ProcessMarketData(record);
                     
                     // Log first few records for debugging
                     if (record_count <= 5) {
@@ -312,7 +344,8 @@ void runHistoricalDataDemo() {
             }
         }
         
-        manager.Stop();
+
+        manager->Stop();
         std::cout << "\n=== Historical MBO Data Demo Completed ===" << std::endl;
         std::cout << "Processed real ES futures order book data from CME Globex." << std::endl;
         
@@ -324,122 +357,6 @@ void runHistoricalDataDemo() {
         std::cout << "- Network connectivity issues" << std::endl;
         std::cout << "- API rate limits exceeded" << std::endl;
         std::cout << "\nNote: MBO data requires appropriate subscription level." << std::endl;
-    }
-}
-
-void runBasicOrderBookDemo() {
-    std::cout << "\n=== Simple P&L Demo for Portfolio Tracking ===" << std::endl;
-    
-    // Create a fresh order book instance
-    auto order_book = std::make_shared<OrderBook>();
-    
-    // Track user 1000 for this demo
-    uint64_t tracked_user_id = 1000;
-    auto client = std::make_shared<DatabentoMboClient>(1, "Demo Client", order_book, tracked_user_id, 100000);
-    
-    // Register the client with the OrderBook
-    order_book->RegisterClient(client);
-    
-    auto portfolio = client->GetPortfolioManager();
-    if (portfolio) {
-        portfolio->EnablePeriodicSnapshots(100000000); // 100ms intervals for demo
-    }
-
-    // Create and configure OrderImbalanceStrategy
-    std::cout << "\n=== Setting up OrderImbalanceStrategy ===" << std::endl;
-    auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
-        "HFT_OrderImbalance", 
-        tracked_user_id, 
-        0.12,  // 12% imbalance threshold
-        15     // 15-snapshot lookback window
-    );
-    
-    // Configure strategy parameters for high-frequency trading
-    order_imbalance_strategy->SetSignalThreshold(0.08);  // 8% signal threshold
-    order_imbalance_strategy->SetBaseQuantity(25);       // 25 contracts base quantity
-    order_imbalance_strategy->SetMomentumFactor(1.8);    // Higher momentum factor
-    order_imbalance_strategy->SetDecayFactor(0.92);      // Faster decay for HFT
-    
-    // Integrate strategy with portfolio manager
-    if (portfolio) {
-        portfolio->SetUserStrategy(order_imbalance_strategy);
-        std::cout << "OrderImbalanceStrategy integrated with PortfolioManager for user " << tracked_user_id << std::endl;
-    }
-
-    try {
-        std::cout << "\n=== Scenario 1: +$100 Profit ===" << std::endl;
-        std::cout << "Tracked user buys 100 contracts at $50.00 and sells at $51.00" << std::endl;
-        
-        // Step 1a: Tracked user places buy order at $50.00
-        std::cout << "1. Tracked user places buy order: 100 @ $50.00" << std::endl;
-        client->SubmitOrder(tracked_user_id, true, 100, 5000);  // Buy 100 @ $50.00
-        
-        // Step 1b: Someone sells to the tracked user
-        std::cout << "2. Market participant sells to tracked user at $50.00" << std::endl;
-        client->SubmitOrder(99, false, 100, 5000);  // Sell 100 @ $50.00 (fills tracked user's buy)
-        
-        // Step 1c: Tracked user places sell order at $51.00  
-        std::cout << "3. Tracked user places sell order: 100 @ $51.00" << std::endl;
-        client->SubmitOrder(tracked_user_id, false, 100, 5100);  // Sell 100 @ $51.00
-        
-        // Step 1d: Someone buys from the tracked user
-        std::cout << "4. Market participant buys from tracked user at $51.00" << std::endl;
-        client->SubmitOrder(98, true, 100, 5100);  // Buy 100 @ $51.00 (fills tracked user's sell)
-        
-        std::cout << "\n=== Scenario 2: -$100 Loss ===" << std::endl;
-        std::cout << "Tracked user buys 100 contracts at $51.00 and sells at $50.00" << std::endl;
-        
-        // Step 2a: Tracked user places buy order at $51.00
-        std::cout << "5. Tracked user places buy order: 100 @ $51.00" << std::endl;
-        client->SubmitOrder(tracked_user_id, true, 100, 5100);  // Buy 100 @ $51.00
-        
-        // Step 2b: Someone sells to the tracked user
-        std::cout << "6. Market participant sells to tracked user at $51.00" << std::endl;
-        client->SubmitOrder(97, false, 100, 5100);  // Sell 100 @ $51.00 (fills tracked user's buy)
-        
-        // Step 2c: Tracked user places sell order at $50.00
-        std::cout << "7. Tracked user places sell order: 100 @ $50.00" << std::endl;
-        client->SubmitOrder(tracked_user_id, false, 100, 5000);  // Sell 100 @ $50.00
-        
-        // Step 2d: Someone buys from the tracked user
-        std::cout << "8. Market participant buys from tracked user at $50.00" << std::endl;
-        client->SubmitOrder(96, true, 100, 5000);  // Buy 100 @ $50.00 (fills tracked user's sell)
-        
-        std::cout << "\n=== Scenario 3: +$100 Profit (Return to Zero) ===" << std::endl;
-        std::cout << "Tracked user buys 100 contracts at $50.00 and sells at $51.00" << std::endl;
-        
-        // Step 3a: Tracked user places buy order at $50.00
-        std::cout << "9. Tracked user places buy order: 100 @ $50.00" << std::endl;
-        client->SubmitOrder(tracked_user_id, true, 100, 5000);  // Buy 100 @ $50.00
-        
-        // Step 3b: Someone sells to the tracked user
-        std::cout << "10. Market participant sells to tracked user at $50.00" << std::endl;
-        client->SubmitOrder(95, false, 100, 5000);  // Sell 100 @ $50.00 (fills tracked user's buy)
-        
-        // Step 3c: Tracked user places sell order at $51.00
-        std::cout << "11. Tracked user places sell order: 100 @ $51.00" << std::endl;
-        client->SubmitOrder(tracked_user_id, false, 100, 5100);  // Sell 100 @ $51.00
-        
-        // Step 3d: Someone buys from the tracked user
-        std::cout << "12. Market participant buys from tracked user at $51.00" << std::endl;
-        client->SubmitOrder(94, true, 100, 5100);  // Buy 100 @ $51.00 (fills tracked user's sell)
-        
-        // Force a final snapshot
-        if (portfolio) {
-            portfolio->ForceSnapshot();
-        }
-        
-        // Show final portfolio summary
-        if (portfolio) {
-            std::cout << "\n=== Final Portfolio Summary ===" << std::endl;
-            portfolio->PrintPortfolioSummary();
-        }
-        
-        // Unregister and shutdown the client
-        order_book->UnregisterClient(client->GetClientId());
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error in demo: " << e.what() << std::endl;
     }
 }
 
@@ -464,8 +381,6 @@ int main() {
         std::cout << "Set DATABENTO_API_KEY environment variable to enable live data demos" << std::endl;
     }
     
-    // Always run the basic demo to show client interface and single-user portfolio tracking
-    runBasicOrderBookDemo();
     
     // Try to run historical demo - will use cached data if no API key
     runHistoricalDataDemo();

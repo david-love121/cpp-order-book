@@ -7,6 +7,7 @@
 #include "IStrategy.h"
 #include "TopOfBookTracker.h"
 #include "PortfolioManager.h"
+#include "Trade.h"
 
 // Include Databento headers for market data processing
 #include <databento/live.hpp>
@@ -27,14 +28,14 @@ class DatabentoProcessor;
  * all order book activities, market data processing, and strategy execution.
  * It owns and orchestrates all components without complex inheritance chains.
  */
-class OrderBookManager : public IClient {
+class OrderBookManager : public IClient, public std::enable_shared_from_this<OrderBookManager> {
 private:
     // Core components (owned and orchestrated)
     std::shared_ptr<OrderBook> order_book_;
     std::shared_ptr<PortfolioManager> portfolio_manager_;
     std::shared_ptr<TopOfBookTracker> tob_tracker_;
     std::shared_ptr<IStrategy> strategy_;
-    std::shared_ptr<DatabentoProcessor> databento_processor_;
+    std::shared_ptr<DatabentoProcessor> data_processor_;
     
     // Client identification
     uint64_t client_id_;
@@ -57,22 +58,17 @@ public:
     OrderBookManager(uint64_t slippage_delay_ns = 1000000, uint64_t tracked_user_id = 0);
     
     // ========== IClient Interface Implementation ==========
-    
-    uint64_t SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity,
-                         uint64_t price, uint64_t ts_received,
-                         uint64_t ts_executed) override;
-    uint64_t SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity,
-                         uint64_t price) override;
-    bool CancelOrder(uint64_t order_id) override;
-    bool ModifyOrder(uint64_t order_id, uint64_t new_quantity,
-                     uint64_t new_price) override;
+
     uint64_t GetBestBid() const override;
     uint64_t GetBestAsk() const override;
     uint64_t GetTotalBidVolume() const override;
     uint64_t GetTotalAskVolume() const override;
     uint64_t GetSpread() const override;
     uint64_t GetMidPrice() const override;
-
+    uint64_t SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+                                uint64_t ts_received, uint64_t ts_executed) override;
+    void CancelOrder(uint64_t order_id) override;
+    void ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price) override;
     // ========== IClient Event Handlers ==========
     
     void OnTradeExecuted(const Trade &trade) override;
@@ -85,15 +81,20 @@ public:
                            uint64_t bid_volume, uint64_t ask_volume) override;
 
     void Initialize() override;
+    void InitializeAfterConstruction(); // Called after shared_ptr is fully constructed
     void Shutdown() override;
     uint64_t GetClientId() const override;
     std::string GetClientName() const override;
+
 
     // ========== Orchestrator Management Methods ==========
     
     void Start();
     void Stop();
     
+
+    
+
     // Component access (for external configuration)
     std::shared_ptr<PortfolioManager> GetPortfolioManager() const;
     std::shared_ptr<TopOfBookTracker> GetTopOfBookTracker() const;
@@ -117,13 +118,19 @@ public:
     
     // Market state management (for DatabentoProcessor)
     void UpdateMarketState(const std::string& symbol, uint64_t timestamp);
+    
+    // L3 Order Book data access
+    OrderBookSnapshot GetOrderBookSnapshot() const;
+    
+    // Data processor management
+    void SetDataProcessor(std::shared_ptr<DatabentoProcessor> processor);
+    std::shared_ptr<DatabentoProcessor> GetDataProcessor() const;
 
 private:
     // Internal orchestration methods
     uint64_t GenerateOrderId();
     void RouteToPortfolio(const Trade& trade);
-    void RouteToStrategy(uint64_t best_bid, uint64_t best_ask, 
-                        uint64_t bid_volume, uint64_t ask_volume);
     void RouteToTopOfBookTracker(uint64_t best_bid, uint64_t best_ask,
                                 uint64_t bid_volume, uint64_t ask_volume);
+    void NotifyStrategyOfOrderBookChange();
 };

@@ -16,14 +16,7 @@ Strategy::Strategy(const std::string &name, uint64_t user_id)
   parameters_["risk_multiplier"] = 1.0;
 }
 
-StrategyAction Strategy::OnTopOfBookUpdate(const TOBSnapshot &tob_snapshot) {
-  // Convert TOBSnapshot to MarketSnapshot
-  MarketSnapshot market_snapshot(
-      tob_snapshot.timestamp, tob_snapshot.symbol, tob_snapshot.best_bid,
-      tob_snapshot.best_ask, tob_snapshot.bid_volume, tob_snapshot.ask_volume);
-
-  return ProcessMarketData(market_snapshot);
-}
+// Default implementation is now removed - derived classes must implement ProcessOrderBookData
 
 void Strategy::Initialize(const std::unordered_map<std::string, double> &parameters) {
   parameters_ = parameters;
@@ -172,12 +165,12 @@ std::shared_ptr<IStrategy> StrategyManager::GetStrategy(uint64_t user_id) const 
 }
 
 std::vector<std::pair<uint64_t, StrategyAction>>
-StrategyManager::ProcessMarketData(const MarketSnapshot &snapshot) {
+StrategyManager::ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot) {
   std::vector<std::pair<uint64_t, StrategyAction>> results;
 
   for (const auto &[user_id, strategy] : user_strategies_) {
     if (strategy && strategy->IsEnabled()) {
-      StrategyAction action = strategy->ProcessMarketData(snapshot);
+      StrategyAction action = strategy->ProcessOrderBookData(orderbook_snapshot);
       if (action.signal != StrategySignal::NONE) {
         results.emplace_back(user_id, action);
       }

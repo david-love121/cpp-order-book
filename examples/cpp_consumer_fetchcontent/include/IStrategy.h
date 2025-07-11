@@ -11,31 +11,76 @@ struct TOBSnapshot;
 class PortfolioManager;
 
 /**
- * @brief Market data snapshot for strategy calculations
+ * @brief Price level data for L3 order book
  */
-struct MarketSnapshot {
+struct PriceLevelData {
+  uint64_t price;
+  uint64_t total_volume;
+  uint64_t order_count;
+  
+  PriceLevelData(uint64_t p = 0, uint64_t vol = 0, uint64_t count = 0)
+      : price(p), total_volume(vol), order_count(count) {}
+};
+
+/**
+ * @brief Full order book snapshot with L3 data
+ */
+struct OrderBookSnapshot {
   uint64_t timestamp;
   std::string symbol;
-  double best_bid;
-  double best_ask;
-  uint64_t bid_volume;
-  uint64_t ask_volume;
-  double mid_price;
-  double spread;
-  double
-      order_imbalance; // (bid_volume - ask_volume) / (bid_volume + ask_volume)
-
-  MarketSnapshot(uint64_t ts = 0, const std::string &sym = "", double bid = 0.0,
-                 double ask = 0.0, uint64_t bid_vol = 0, uint64_t ask_vol = 0)
-      : timestamp(ts), symbol(sym), best_bid(bid), best_ask(ask),
-        bid_volume(bid_vol), ask_volume(ask_vol),
-        mid_price((bid > 0 && ask > 0) ? (bid + ask) / 2.0 : 0.0),
-        spread((bid > 0 && ask > 0) ? (ask - bid) : 0.0),
-        order_imbalance((bid_vol + ask_vol > 0)
-                            ? static_cast<double>(bid_vol - ask_vol) /
-                                  (bid_vol + ask_vol)
-                            : 0.0) {}
+  std::vector<PriceLevelData> bid_levels;  // Sorted highest to lowest
+  std::vector<PriceLevelData> ask_levels;  // Sorted lowest to highest
+  
+  OrderBookSnapshot(uint64_t ts = 0, const std::string &sym = "")
+      : timestamp(ts), symbol(sym) {}
+      
+  // Helper methods to extract top-of-book data
+  double GetBestBid() const {
+    return bid_levels.empty() ? 0.0 : bid_levels[0].price / 100.0;
+  }
+  
+  double GetBestAsk() const {
+    return ask_levels.empty() ? 0.0 : ask_levels[0].price / 100.0;
+  }
+  
+  uint64_t GetBestBidVolume() const {
+    return bid_levels.empty() ? 0 : bid_levels[0].total_volume;
+  }
+  
+  uint64_t GetBestAskVolume() const {
+    return ask_levels.empty() ? 0 : ask_levels[0].total_volume;
+  }
+  
+  double GetMidPrice() const {
+    double bid = GetBestBid();
+    double ask = GetBestAsk();
+    return (bid > 0 && ask > 0) ? (bid + ask) / 2.0 : 0.0;
+  }
+  
+  double GetSpread() const {
+    double bid = GetBestBid();
+    double ask = GetBestAsk();
+    return (bid > 0 && ask > 0) ? (ask - bid) : 0.0;
+  }
+  
+  // Calculate total volume across all levels
+  uint64_t GetTotalBidVolume() const {
+    uint64_t total = 0;
+    for (const auto& level : bid_levels) {
+      total += level.total_volume;
+    }
+    return total;
+  }
+  
+  uint64_t GetTotalAskVolume() const {
+    uint64_t total = 0;
+    for (const auto& level : ask_levels) {
+      total += level.total_volume;
+    }
+    return total;
+  }
 };
+
 
 /**
  * @brief Strategy signal enumeration
@@ -72,18 +117,11 @@ public:
   virtual ~IStrategy() = default;
 
   /**
-   * @brief Process market data and generate trading signals
-   * @param snapshot Market data snapshot
+   * @brief Process full order book data and generate trading signals
+   * @param orderbook_snapshot Full order book snapshot with L3 data
    * @return Strategy action
    */
-  virtual StrategyAction ProcessMarketData(const MarketSnapshot &snapshot) = 0;
-
-  /**
-   * @brief Update strategy with TOB data
-   * @param tob_snapshot Top of book snapshot
-   * @return Strategy action
-   */
-  virtual StrategyAction OnTopOfBookUpdate(const TOBSnapshot &tob_snapshot) = 0;
+  virtual StrategyAction ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot) = 0;
 
   /**
    * @brief Initialize strategy with parameters
@@ -131,6 +169,7 @@ protected:
   std::shared_ptr<PortfolioManager> portfolio_manager_;
   std::unordered_map<std::string, double> parameters_;
 
+
 public:
   /**
    * @brief Constructor for Strategy
@@ -142,10 +181,7 @@ public:
   virtual ~Strategy() = default;
 
   // Pure virtual - must be implemented by derived classes
-  virtual StrategyAction ProcessMarketData(const MarketSnapshot &snapshot) = 0;
-
-  // Default implementation that can be overridden
-  virtual StrategyAction OnTopOfBookUpdate(const TOBSnapshot &tob_snapshot) override;
+  virtual StrategyAction ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot) = 0;
 
   // Interface implementations
   virtual void Initialize(const std::unordered_map<std::string, double> &parameters) override;
@@ -206,12 +242,12 @@ public:
   std::shared_ptr<IStrategy> GetStrategy(uint64_t user_id) const;
 
   /**
-   * @brief Process market data for all strategies
-   * @param snapshot Market data snapshot
+   * @brief Process order book data for all strategies
+   * @param orderbook_snapshot Order book snapshot with L3 data
    * @return Vector of strategy actions from all active strategies
    */
   std::vector<std::pair<uint64_t, StrategyAction>>
-  ProcessMarketData(const MarketSnapshot &snapshot);
+  ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot);
 
   /**
    * @brief Get all strategies

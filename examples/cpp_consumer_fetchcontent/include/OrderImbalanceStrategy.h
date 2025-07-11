@@ -5,7 +5,7 @@
 #include <memory>
 
 class PortfolioManager;
-class DatabentoMboClient;
+class IClient;
 
 /**
  * @brief High-frequency order book imbalance strategy
@@ -27,7 +27,7 @@ private:
     double momentum_factor_;         // Amplification factor for momentum
     double decay_factor_;           // Decay factor for historical signals
     size_t lookback_window_;        // Number of snapshots to consider
-    
+    uint64_t slippage_delay_ns_;   // Simulated slippage delay for orders (nanoseconds)
     // Historical data tracking
     std::deque<double> imbalance_history_;      // Rolling window of imbalances
     std::deque<double> price_history_;          // Rolling window of mid prices
@@ -43,7 +43,7 @@ private:
     double position_limit_factor_;  // Position limit as factor of base quantity
     
     // Auto-trading functionality
-    std::shared_ptr<DatabentoMboClient> order_client_;  // Client for placing orders
+    std::shared_ptr<IClient> order_client_;  // Client for placing orders
     bool auto_trading_enabled_;     // Enable/disable automatic order placement
     uint64_t last_order_time_;      // Timestamp of last order placed
     uint64_t min_order_interval_;   // Minimum time between orders (nanoseconds)
@@ -64,12 +64,13 @@ public:
                           double imbalance_threshold = 0.15,
                           size_t lookback_window = 20);
 
+
     /**
-     * @brief Process market data and generate trading signals
-     * @param snapshot Market data snapshot
-     * @return Strategy action based on order imbalance
+     * @brief Process full order book data and generate trading signals
+     * @param orderbook_snapshot Full order book snapshot with L3 data
+     * @return Strategy action based on L3 order imbalance
      */
-    StrategyAction ProcessMarketData(const MarketSnapshot& snapshot) override;
+    StrategyAction ProcessOrderBookData(const OrderBookSnapshot& orderbook_snapshot) override;
 
     /**
      * @brief Reset strategy state and clear history
@@ -92,9 +93,9 @@ public:
     void SetMomentumFactor(double factor) { momentum_factor_ = factor; }
     void SetDecayFactor(double factor) { decay_factor_ = factor; }
     void SetLookbackWindow(size_t window);
-    
+    void SetSlippageDelay(uint64_t delay_ns) { slippage_delay_ns_ = delay_ns; }
     // Auto-trading configuration
-    void SetOrderClient(std::shared_ptr<DatabentoMboClient> client) { order_client_ = client; }
+    void SetOrderClient(std::shared_ptr<IClient> client) { order_client_ = client; }
     void EnableAutoTrading(bool enabled = true) { auto_trading_enabled_ = enabled; }
     void SetMinSignalForTrade(double signal) { min_signal_for_trade_ = signal; }
     void SetMinOrderInterval(uint64_t interval_ns) { min_order_interval_ = interval_ns; }
@@ -105,12 +106,13 @@ public:
     uint64_t GetOrderCount() const { return recent_order_times_.size(); }
 
 private:
+
     /**
-     * @brief Calculate order imbalance from market snapshot
-     * @param snapshot Market data snapshot
+     * @brief Calculate L3 order imbalance from full order book
+     * @param orderbook_snapshot Full order book snapshot
      * @return Imbalance value [-1.0, 1.0]
      */
-    double CalculateImbalance(const MarketSnapshot& snapshot) const;
+    double CalculateL3Imbalance(const OrderBookSnapshot& orderbook_snapshot) const;
 
     /**
      * @brief Calculate momentum-adjusted signal
@@ -119,11 +121,12 @@ private:
      */
     double CalculateMomentumSignal(double raw_imbalance);
 
+
     /**
-     * @brief Update historical data with new snapshot
-     * @param snapshot Market data snapshot
+     * @brief Update historical data with L3 order book snapshot
+     * @param orderbook_snapshot Full order book snapshot
      */
-    void UpdateHistory(const MarketSnapshot& snapshot);
+    void UpdateHistoryFromOrderBook(const OrderBookSnapshot& orderbook_snapshot);
 
     /**
      * @brief Calculate signal strength based on imbalance pattern
@@ -141,18 +144,18 @@ private:
 
     /**
      * @brief Check if current market conditions support trading
-     * @param snapshot Market data snapshot
+     * @param orderbook_snapshot Order book snapshot
      * @return True if conditions are suitable for trading
      */
-    bool IsMarketConditionsSuitable(const MarketSnapshot& snapshot) const;
+    bool IsMarketConditionsSuitable(const OrderBookSnapshot& orderbook_snapshot) const;
     
     /**
      * @brief Execute auto-trading based on signal
      * @param signal Signal strength [-1.0, 1.0]
-     * @param snapshot Current market snapshot
+     * @param orderbook_snapshot Current order book snapshot
      * @return True if order was placed
      */
-    bool ExecuteAutoTrade(double signal, const MarketSnapshot& snapshot);
+    bool ExecuteAutoTrade(double signal, double slippage_delay_ns, const OrderBookSnapshot& orderbook_snapshot);
     
     /**
      * @brief Check if order placement is allowed (rate limiting)
@@ -164,11 +167,11 @@ private:
     /**
      * @brief Calculate order price based on signal and market conditions
      * @param signal Signal strength
-     * @param snapshot Market snapshot
+     * @param orderbook_snapshot Order book snapshot
      * @param is_buy Whether this is a buy order
      * @return Order price in ticks
      */
-    uint64_t CalculateOrderPrice(double signal, const MarketSnapshot& snapshot, bool is_buy) const;
+    uint64_t CalculateOrderPrice(double signal, const OrderBookSnapshot& orderbook_snapshot, bool is_buy) const;
     
     /**
      * @brief Calculate order quantity based on signal strength
@@ -176,4 +179,26 @@ private:
      * @return Order quantity
      */
     uint64_t CalculateOrderQuantity(double signal) const;
+    
+    /**
+     * @brief Calculate weighted volume imbalance across multiple price levels
+     * @param orderbook_snapshot Full order book snapshot
+     * @param depth Number of price levels to consider
+     * @return Weighted imbalance value
+     */
+    double CalculateWeightedImbalance(const OrderBookSnapshot& orderbook_snapshot, size_t depth = 5) const;
+    
+    /**
+     * @brief Calculate order count imbalance (number of orders, not volume)
+     * @param orderbook_snapshot Full order book snapshot
+     * @return Order count imbalance
+     */
+    double CalculateOrderCountImbalance(const OrderBookSnapshot& orderbook_snapshot) const;
+    
+    /**
+     * @brief Calculate price level density analysis
+     * @param orderbook_snapshot Full order book snapshot
+     * @return Density-based signal
+     */
+    double CalculatePriceLevelDensity(const OrderBookSnapshot& orderbook_snapshot) const;
 };

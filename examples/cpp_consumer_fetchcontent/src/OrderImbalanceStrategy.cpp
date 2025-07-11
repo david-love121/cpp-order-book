@@ -1,6 +1,6 @@
 #include "OrderImbalanceStrategy.h"
 #include "PortfolioManager.h"
-#include "DatabentoMboClient.h"
+#include "IClient.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -49,13 +49,14 @@ OrderImbalanceStrategy::OrderImbalanceStrategy(const std::string& name,
               << ", window=" << lookback_window_ << std::endl;
 }
 
-StrategyAction OrderImbalanceStrategy::ProcessMarketData(const MarketSnapshot& snapshot) {
+
+StrategyAction OrderImbalanceStrategy::ProcessOrderBookData(const OrderBookSnapshot& orderbook_snapshot) {
     static uint64_t total_calls = 0;
     total_calls++;
     
     if (total_calls <= 5 || total_calls % 1000 == 0) {
-        std::cout << "[STRATEGY-ENTRY] ProcessMarketData called #" << total_calls 
-                  << " for symbol=" << snapshot.symbol 
+        std::cout << "[STRATEGY-L3] ProcessOrderBookData called #" << total_calls 
+                  << " for symbol=" << orderbook_snapshot.symbol 
                   << ", enabled=" << IsEnabled() << std::endl;
     }
     
@@ -63,57 +64,63 @@ StrategyAction OrderImbalanceStrategy::ProcessMarketData(const MarketSnapshot& s
         return StrategyAction(StrategySignal::NONE, 0, 0.0);
     }
     
-    // Check if market conditions are suitable for trading
-    if (!IsMarketConditionsSuitable(snapshot)) {
+    // Check if we have meaningful order book data
+    if (orderbook_snapshot.bid_levels.empty() || orderbook_snapshot.ask_levels.empty()) {
         return StrategyAction(StrategySignal::NONE, 0, 0.0);
     }
     
-    // Update historical data
-    UpdateHistory(snapshot);
+    // Calculate L3 imbalance using full order book
+    double l3_imbalance = CalculateL3Imbalance(orderbook_snapshot);
     
-    // Calculate raw imbalance
-    double raw_imbalance = CalculateImbalance(snapshot);
+    // Calculate weighted imbalance across multiple levels
+    double weighted_imbalance = CalculateWeightedImbalance(orderbook_snapshot, 5);
+    
+    // Calculate order count imbalance
+    double order_count_imbalance = CalculateOrderCountImbalance(orderbook_snapshot);
+    
+    // Calculate price level density
+    double density_signal = CalculatePriceLevelDensity(orderbook_snapshot);
+    
+    // Combine multiple L3 signals with different weights
+    double combined_signal = 0.4 * l3_imbalance + 
+                           0.3 * weighted_imbalance + 
+                           0.2 * order_count_imbalance + 
+                           0.1 * density_signal;
+    
+    // Update historical data using order book snapshot
+    UpdateHistoryFromOrderBook(orderbook_snapshot);
     
     // Calculate momentum-adjusted signal
-    double momentum_signal = CalculateMomentumSignal(raw_imbalance);
+    double momentum_signal = CalculateMomentumSignal(combined_signal);
     
-    // Calculate signal strength based on imbalance pattern
-    double signal_strength = CalculateSignalStrength(raw_imbalance);
+    // Calculate signal strength
+    double signal_strength = CalculateSignalStrength(combined_signal);
     
     // Apply risk management
     double final_signal = ApplyRiskManagement(momentum_signal);
     
     // Update current signal state
     current_signal_ = final_signal;
-    last_signal_time_ = snapshot.timestamp;
+    last_signal_time_ = orderbook_snapshot.timestamp;
     
     // Execute auto-trading if enabled and signal is strong enough
     bool order_placed = false;
     if (auto_trading_enabled_ && std::abs(final_signal) >= min_signal_for_trade_) {
-        order_placed = ExecuteAutoTrade(final_signal, snapshot);
+        order_placed = ExecuteAutoTrade(final_signal, slippage_delay_ns_, orderbook_snapshot);
     }
     
-    // Convert signal to action using base class helper
+    // Convert signal to action
     StrategyAction action = SignalToAction(final_signal);
     action.confidence = signal_strength;
     
-    // Periodic debug output to show signal values (every 100 calls)
-    static uint64_t call_count = 0;
-    call_count++;
-    if (call_count % 100 == 0) {
-        std::cout << "[STRATEGY-DEBUG] Call #" << call_count 
-                  << " signal=" << final_signal 
-                  << ", raw_imbalance=" << raw_imbalance
-                  << ", threshold=" << GetSignalThreshold()
-                  << ", min_for_trade=" << min_signal_for_trade_
-                  << ", auto_enabled=" << auto_trading_enabled_ << std::endl;
-    }
-    
-    // Log significant signals for debugging
+    // Log significant L3 signals
     if (std::abs(final_signal) > GetSignalThreshold()) {
-        std::cout << "[STRATEGY] OrderImbalance signal=" << final_signal 
-                  << ", imbalance=" << raw_imbalance
-                  << ", momentum=" << signal_momentum_
+        std::cout << "[STRATEGY-L3] L3 signal=" << final_signal 
+                  << ", l3_imbalance=" << l3_imbalance
+                  << ", weighted=" << weighted_imbalance
+                  << ", order_count=" << order_count_imbalance
+                  << ", density=" << density_signal
+                  << ", levels=" << orderbook_snapshot.bid_levels.size() + orderbook_snapshot.ask_levels.size()
                   << ", action=" << (action.signal == StrategySignal::BUY ? "BUY" : 
                                    action.signal == StrategySignal::SELL ? "SELL" : "HOLD")
                   << ", qty=" << action.quantity
@@ -141,7 +148,7 @@ void OrderImbalanceStrategy::Reset() {
     
     std::cout << "[STRATEGY] OrderImbalanceStrategy reset" << std::endl;
 }
-
+//This is slightly clunky, intended to allow setting parameters from config file
 void OrderImbalanceStrategy::Initialize(const std::unordered_map<std::string, double>& parameters) {
     // Call base class initialize
     Strategy::Initialize(parameters);
@@ -157,7 +164,7 @@ void OrderImbalanceStrategy::Initialize(const std::unordered_map<std::string, do
     min_signal_for_trade_ = GetParameter("min_signal_for_trade", 0.15);
     min_order_interval_ = static_cast<uint64_t>(GetParameter("min_order_interval_ms", 1000.0) * 1000000.0);  // Convert ms to ns
     max_orders_per_minute_ = static_cast<uint64_t>(GetParameter("max_orders_per_minute", 30.0));
-    
+    slippage_delay_ns_ = static_cast<uint64_t>(GetParameter("slippage_delay_ns", 1000000.0)); // Default 1ms
     std::cout << "[STRATEGY] OrderImbalanceStrategy initialized with custom parameters" << std::endl;
 }
 
@@ -177,17 +184,6 @@ void OrderImbalanceStrategy::SetLookbackWindow(size_t window) {
     }
 }
 
-double OrderImbalanceStrategy::CalculateImbalance(const MarketSnapshot& snapshot) const {
-    // Standard order imbalance calculation
-    if (snapshot.bid_volume + snapshot.ask_volume == 0) {
-        return 0.0;
-    }
-    
-    double imbalance = static_cast<double>(snapshot.bid_volume) - static_cast<double>(snapshot.ask_volume);
-    double total_volume = static_cast<double>(snapshot.bid_volume + snapshot.ask_volume);
-    
-    return imbalance / total_volume;  // Normalized to [-1.0, 1.0]
-}
 
 double OrderImbalanceStrategy::CalculateMomentumSignal(double raw_imbalance) {
     // Update momentum with exponential decay
@@ -200,29 +196,6 @@ double OrderImbalanceStrategy::CalculateMomentumSignal(double raw_imbalance) {
     return std::max(-max_signal_strength_, std::min(max_signal_strength_, momentum_enhanced));
 }
 
-void OrderImbalanceStrategy::UpdateHistory(const MarketSnapshot& snapshot) {
-    // Update imbalance history
-    double imbalance = CalculateImbalance(snapshot);
-    imbalance_history_.push_back(imbalance);
-    if (imbalance_history_.size() > lookback_window_) {
-        imbalance_history_.pop_front();
-    }
-    
-    // Update price history
-    if (snapshot.mid_price > 0.0) {
-        price_history_.push_back(snapshot.mid_price);
-        if (price_history_.size() > lookback_window_) {
-            price_history_.pop_front();
-        }
-    }
-    
-    // Update volume history
-    uint64_t total_volume = snapshot.bid_volume + snapshot.ask_volume;
-    volume_history_.push_back(total_volume);
-    if (volume_history_.size() > lookback_window_) {
-        volume_history_.pop_front();
-    }
-}
 
 double OrderImbalanceStrategy::CalculateSignalStrength(double imbalance) const {
     if (imbalance_history_.size() < 3) {
@@ -277,24 +250,26 @@ double OrderImbalanceStrategy::ApplyRiskManagement(double signal) const {
     return std::max(-max_signal_strength_, std::min(max_signal_strength_, signal));
 }
 
-bool OrderImbalanceStrategy::IsMarketConditionsSuitable(const MarketSnapshot& snapshot) const {
+bool OrderImbalanceStrategy::IsMarketConditionsSuitable(const OrderBookSnapshot& orderbook_snapshot) const {
     // Check for valid prices
-    if (snapshot.best_bid <= 0.0 || snapshot.best_ask <= 0.0) {
+    if (orderbook_snapshot.GetBestBid() <= 0.0 || orderbook_snapshot.GetBestAsk() <= 0.0) {
         return false;
     }
     
     // Check for reasonable spread
-    if (snapshot.spread <= 0.0 || snapshot.spread > snapshot.mid_price * 0.01) {  // Max 1% spread
+    double spread = orderbook_snapshot.GetSpread();
+    double mid_price = orderbook_snapshot.GetMidPrice();
+    if (spread <= 0.0 || spread > mid_price * 0.01) {  // Max 1% spread
         return false;
     }
     
     // Check for minimum volume
-    if (snapshot.bid_volume == 0 && snapshot.ask_volume == 0) {
+    if (orderbook_snapshot.GetBestBidVolume() == 0 && orderbook_snapshot.GetBestAskVolume() == 0) {
         return false;
     }
     
     // Check for crossed market
-    if (snapshot.best_bid >= snapshot.best_ask) {
+    if (orderbook_snapshot.GetBestBid() >= orderbook_snapshot.GetBestAsk()) {
         return false;
     }
     
@@ -303,13 +278,14 @@ bool OrderImbalanceStrategy::IsMarketConditionsSuitable(const MarketSnapshot& sn
 
 // Auto-trading implementation
 
-bool OrderImbalanceStrategy::ExecuteAutoTrade(double signal, const MarketSnapshot& snapshot) {
+
+bool OrderImbalanceStrategy::ExecuteAutoTrade(double signal, double slippage_delay_ns, const OrderBookSnapshot& orderbook_snapshot) {
     if (!order_client_ || !auto_trading_enabled_) {
         return false;
     }
     
     // Check rate limiting
-    if (!CanPlaceOrder(snapshot.timestamp)) {
+    if (!CanPlaceOrder(orderbook_snapshot.timestamp)) {
         return false;
     }
     
@@ -318,22 +294,22 @@ bool OrderImbalanceStrategy::ExecuteAutoTrade(double signal, const MarketSnapsho
     
     // Calculate order parameters
     uint64_t quantity = CalculateOrderQuantity(std::abs(signal));
-    uint64_t price = CalculateOrderPrice(signal, snapshot, is_buy);
+    uint64_t price = CalculateOrderPrice(signal, orderbook_snapshot, is_buy);
     
     if (quantity == 0 || price == 0) {
         return false;
     }
     
     // Place the order
-    uint64_t order_id = order_client_->SubmitOrder(GetUserId(), is_buy, quantity, price);
-    
+    uint64_t order_id = order_client_->SubmitOrder(GetUserId(), is_buy, quantity, price, orderbook_snapshot.timestamp, orderbook_snapshot.timestamp + slippage_delay_ns_);
+
     if (order_id > 0) {
         // Record successful order placement
-        recent_order_times_.push_back(snapshot.timestamp);
-        last_order_time_ = snapshot.timestamp;
+        recent_order_times_.push_back(orderbook_snapshot.timestamp);
+        last_order_time_ = orderbook_snapshot.timestamp;
         
         // Clean up old timestamps (keep only last minute)
-        uint64_t one_minute_ago = snapshot.timestamp - 60000000000ULL; // 60 seconds in nanoseconds
+        uint64_t one_minute_ago = orderbook_snapshot.timestamp - 60000000000ULL; // 60 seconds in nanoseconds
         while (!recent_order_times_.empty() && recent_order_times_.front() < one_minute_ago) {
             recent_order_times_.pop_front();
         }
@@ -368,14 +344,14 @@ bool OrderImbalanceStrategy::CanPlaceOrder(uint64_t current_time) {
     return recent_orders < max_orders_per_minute_;
 }
 
-uint64_t OrderImbalanceStrategy::CalculateOrderPrice(double signal, const MarketSnapshot& snapshot, bool is_buy) const {
-    if (snapshot.best_bid <= 0.0 || snapshot.best_ask <= 0.0) {
+uint64_t OrderImbalanceStrategy::CalculateOrderPrice(double signal, const OrderBookSnapshot& orderbook_snapshot, bool is_buy) const {
+    if (orderbook_snapshot.GetBestBid() <= 0.0 || orderbook_snapshot.GetBestAsk() <= 0.0) {
         return 0;
     }
     
     // Convert prices to ticks (assuming 0.01 tick size, multiply by 100)
-    uint64_t bid_ticks = static_cast<uint64_t>(snapshot.best_bid * 100.0);
-    uint64_t ask_ticks = static_cast<uint64_t>(snapshot.best_ask * 100.0);
+    uint64_t bid_ticks = static_cast<uint64_t>(orderbook_snapshot.GetBestBid() * 100.0);
+    uint64_t ask_ticks = static_cast<uint64_t>(orderbook_snapshot.GetBestAsk() * 100.0);
     
     // Signal strength determines aggressiveness
     double signal_strength = std::abs(signal);
@@ -418,4 +394,145 @@ uint64_t OrderImbalanceStrategy::CalculateOrderQuantity(double signal_strength) 
     
     // Ensure minimum quantity of 1
     return std::max(1UL, quantity);
+}
+
+// L3 Order Book Analysis Methods
+
+double OrderImbalanceStrategy::CalculateL3Imbalance(const OrderBookSnapshot& orderbook_snapshot) const {
+    uint64_t total_bid_volume = orderbook_snapshot.GetTotalBidVolume();
+    uint64_t total_ask_volume = orderbook_snapshot.GetTotalAskVolume();
+    
+    if (total_bid_volume + total_ask_volume == 0) {
+        return 0.0;
+    }
+    
+    double imbalance = static_cast<double>(total_bid_volume) - static_cast<double>(total_ask_volume);
+    double total_volume = static_cast<double>(total_bid_volume + total_ask_volume);
+    
+    return imbalance / total_volume;
+}
+
+double OrderImbalanceStrategy::CalculateWeightedImbalance(const OrderBookSnapshot& orderbook_snapshot, size_t depth) const {
+    if (orderbook_snapshot.bid_levels.empty() || orderbook_snapshot.ask_levels.empty()) {
+        return 0.0;
+    }
+    
+    double weighted_bid_volume = 0.0;
+    double weighted_ask_volume = 0.0;
+    
+    // Calculate weighted bid volume (higher prices get more weight)
+    for (size_t i = 0; i < std::min(depth, orderbook_snapshot.bid_levels.size()); ++i) {
+        const auto& level = orderbook_snapshot.bid_levels[i];
+        double weight = 1.0 / (1.0 + i);  // Decreasing weight with distance from BBO
+        weighted_bid_volume += level.total_volume * weight;
+    }
+    
+    // Calculate weighted ask volume (lower prices get more weight)
+    for (size_t i = 0; i < std::min(depth, orderbook_snapshot.ask_levels.size()); ++i) {
+        const auto& level = orderbook_snapshot.ask_levels[i];
+        double weight = 1.0 / (1.0 + i);  // Decreasing weight with distance from BBO
+        weighted_ask_volume += level.total_volume * weight;
+    }
+    
+    if (weighted_bid_volume + weighted_ask_volume == 0.0) {
+        return 0.0;
+    }
+    
+    double imbalance = weighted_bid_volume - weighted_ask_volume;
+    double total_weighted_volume = weighted_bid_volume + weighted_ask_volume;
+    
+    return imbalance / total_weighted_volume;
+}
+
+double OrderImbalanceStrategy::CalculateOrderCountImbalance(const OrderBookSnapshot& orderbook_snapshot) const {
+    uint64_t total_bid_orders = 0;
+    uint64_t total_ask_orders = 0;
+    
+    // Count orders on bid side
+    for (const auto& level : orderbook_snapshot.bid_levels) {
+        total_bid_orders += level.order_count;
+    }
+    
+    // Count orders on ask side
+    for (const auto& level : orderbook_snapshot.ask_levels) {
+        total_ask_orders += level.order_count;
+    }
+    
+    if (total_bid_orders + total_ask_orders == 0) {
+        return 0.0;
+    }
+    
+    double imbalance = static_cast<double>(total_bid_orders) - static_cast<double>(total_ask_orders);
+    double total_orders = static_cast<double>(total_bid_orders + total_ask_orders);
+    
+    return imbalance / total_orders;
+}
+
+double OrderImbalanceStrategy::CalculatePriceLevelDensity(const OrderBookSnapshot& orderbook_snapshot) const {
+    if (orderbook_snapshot.bid_levels.empty() || orderbook_snapshot.ask_levels.empty()) {
+        return 0.0;
+    }
+    
+    // Calculate density as the ratio of price levels to price range
+    double best_bid = orderbook_snapshot.GetBestBid();
+    double best_ask = orderbook_snapshot.GetBestAsk();
+    
+    if (best_bid <= 0 || best_ask <= 0) {
+        return 0.0;
+    }
+    
+    // Calculate price range for analysis (use first 10 levels or all available)
+    size_t max_levels = 10;
+    double bid_range = 0.0;
+    double ask_range = 0.0;
+    
+    if (orderbook_snapshot.bid_levels.size() > 1) {
+        size_t levels_to_check = std::min(max_levels, orderbook_snapshot.bid_levels.size());
+        double lowest_bid = orderbook_snapshot.bid_levels[levels_to_check - 1].price / 100.0;
+        bid_range = best_bid - lowest_bid;
+    }
+    
+    if (orderbook_snapshot.ask_levels.size() > 1) {
+        size_t levels_to_check = std::min(max_levels, orderbook_snapshot.ask_levels.size());
+        double highest_ask = orderbook_snapshot.ask_levels[levels_to_check - 1].price / 100.0;
+        ask_range = highest_ask - best_ask;
+    }
+    
+    // Calculate density metric
+    double bid_density = (bid_range > 0) ? orderbook_snapshot.bid_levels.size() / bid_range : 0.0;
+    double ask_density = (ask_range > 0) ? orderbook_snapshot.ask_levels.size() / ask_range : 0.0;
+    
+    // Return density imbalance (higher density on one side indicates more liquidity)
+    if (bid_density + ask_density == 0.0) {
+        return 0.0;
+    }
+    
+    return (bid_density - ask_density) / (bid_density + ask_density);
+}
+
+void OrderImbalanceStrategy::UpdateHistoryFromOrderBook(const OrderBookSnapshot& orderbook_snapshot) {
+    // Calculate L3 imbalance for history tracking
+    double l3_imbalance = CalculateL3Imbalance(orderbook_snapshot);
+    
+    // Update imbalance history
+    imbalance_history_.push_back(l3_imbalance);
+    if (imbalance_history_.size() > lookback_window_) {
+        imbalance_history_.pop_front();
+    }
+    
+    // Update price history
+    double mid_price = orderbook_snapshot.GetMidPrice();
+    if (mid_price > 0.0) {
+        price_history_.push_back(mid_price);
+        if (price_history_.size() > lookback_window_) {
+            price_history_.pop_front();
+        }
+    }
+    
+    // Update volume history with total L3 volume
+    uint64_t total_volume = orderbook_snapshot.GetTotalBidVolume() + orderbook_snapshot.GetTotalAskVolume();
+    volume_history_.push_back(total_volume);
+    if (volume_history_.size() > lookback_window_) {
+        volume_history_.pop_front();
+    }
 }
