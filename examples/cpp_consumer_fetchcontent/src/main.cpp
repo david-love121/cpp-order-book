@@ -199,32 +199,8 @@ void runHistoricalDataDemo() {
         // Set up OrderImbalanceStrategy for historical data analysis
         std::cout << "\n=== Setting up OrderImbalanceStrategy for Historical Analysis ===" << std::endl;
         auto client = manager->GetClient();
-        auto portfolio = manager->GetPortfolioManager();
 
-        if (client && portfolio) {
-            portfolio->EnablePeriodicSnapshots(1000000000); // 1s intervals for historical data
-        }
-        auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
-                "Historical_OrderImbalance",
-                tracked_user_id,
-                0.10,  // 10% imbalance threshold for real market data
-                30     // 30-snapshot lookback window for more data
-            );
-
-            // Configure strategy parameters for historical analysis
-            order_imbalance_strategy->SetSignalThreshold(0.05);  // 5% signal threshold
-            order_imbalance_strategy->SetBaseQuantity(5);        // 5 contracts for trading
-            order_imbalance_strategy->SetMomentumFactor(1.2);    // Conservative momentum
-            order_imbalance_strategy->SetDecayFactor(0.98);      // Slower decay for analysis
-            order_imbalance_strategy->SetSlippageDelay(slippage_delay_ns_); // 2ms slippage to match manager
-            // Enable auto-trading with appropriate settings
-
-            order_imbalance_strategy->EnableAutoTrading(true);   // Enable auto-trading
-            order_imbalance_strategy->SetMinSignalForTrade(0.05); // 5% minimum signal for trading
-            order_imbalance_strategy->SetMinOrderInterval(1000000000); // 1 second between orders
-            order_imbalance_strategy->SetMaxOrdersPerMinute(10); // Max 10 orders per minute
-        manager->Start();
-
+        
         std::cout << "OrderBookManager and DatabentoProcessor started successfully" << std::endl;
         
         // Check if we have cached data
@@ -343,8 +319,8 @@ void runHistoricalDataDemo() {
                 return;
             }
         }
-        
 
+        manager->GetPortfolioManager()->PrintPortfolioSummary();
         manager->Stop();
         std::cout << "\n=== Historical MBO Data Demo Completed ===" << std::endl;
         std::cout << "Processed real ES futures order book data from CME Globex." << std::endl;

@@ -38,35 +38,25 @@ public:
      * @param ts_executed Timestamp when order should be executed (nanoseconds)
      * @return Order ID assigned to the new order
      */
-    virtual uint64_t SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+    virtual uint64_t SubmitOrder(uint64_t databento_order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
                                 uint64_t ts_received, uint64_t ts_executed) = 0;
 
-    /**
-     * @brief Submit a new order to the order book (legacy version without timestamps)
-     * @deprecated Use the version with timestamps for historical accuracy
-     * @param user_id User identifier submitting the order
-     * @param is_buy true for buy orders, false for sell orders
-     * @param quantity Order quantity
-     * @param price Order price in ticks
-     * @return Order ID assigned to the new order
-     */
-    virtual uint64_t SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price) = 0;
 
     /**
      * @brief Cancel an existing order
      * @param order_id Order ID to cancel
-     * @return true if cancellation was successful, false otherwise
+
      */
-    virtual bool CancelOrder(uint64_t order_id) = 0;
+    virtual void CancelOrder(uint64_t order_id) = 0;
 
     /**
      * @brief Modify an existing order
      * @param order_id Order ID to modify
      * @param new_quantity New quantity for the order
      * @param new_price New price for the order
-     * @return true if modification was successful, false otherwise
+
      */
-    virtual bool ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price) = 0;
+    virtual void ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price, uint64_t new_ts_received, uint64_t new_ts_executed) = 0;
 
     // ========== Market Data Interface ==========
 
@@ -157,6 +147,15 @@ public:
      * @param reason Human-readable reason for rejection
      */
     virtual void OnOrderRejected(uint64_t order_id, const std::string& reason) = 0;
+
+    /**
+     * @brief Callback for order being fully filled
+     * 
+     * Called when an order is completely filled and removed from the book.
+     * 
+     * @param order_id ID of the order that was filled
+     */
+    virtual void OnOrderFilled(uint64_t order_id) = 0;
 
     // ========== Market Data Callbacks ==========
 

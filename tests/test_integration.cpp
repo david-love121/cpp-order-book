@@ -25,14 +25,14 @@ protected:
 // Test a complete trading scenario
 TEST_F(IntegrationTest, CompleteTradingScenario) {
     // Phase 1: Build initial order book
-    book->AddOrder(1001, 1, false, 100, 10060);  // Sell 100 @ 100.60
-    book->AddOrder(1002, 1, false, 150, 10050);  // Sell 150 @ 100.50
-    book->AddOrder(1003, 1, false, 200, 10070);  // Sell 200 @ 100.70
-    
-    book->AddOrder(2001, 2, true, 120, 10040);   // Buy 120 @ 100.40
-    book->AddOrder(2002, 2, true, 100, 10030);   // Buy 100 @ 100.30
-    book->AddOrder(2003, 2, true, 180, 10045);   // Buy 180 @ 100.45
-    
+    book->AddOrder(1001, 1, false, 100, 10060, 0, 0);  // Sell 100 @ 100.60
+    book->AddOrder(1002, 1, false, 150, 10050, 0, 0);  // Sell 150 @ 100.50
+    book->AddOrder(1003, 1, false, 200, 10070, 0, 0);  // Sell 200 @ 100.70
+
+    book->AddOrder(2001, 2, true, 120, 10040, 0, 0);   // Buy 120 @ 100.40
+    book->AddOrder(2002, 2, true, 100, 10030, 0, 0);   // Buy 100 @ 100.30
+    book->AddOrder(2003, 2, true, 180, 10045, 0, 0);   // Buy 180 @ 100.45
+
     // Verify initial state
     EXPECT_EQ(book->GetBestBid(), 10045);        // Highest buy price
     EXPECT_EQ(book->GetBestAsk(), 10050);        // Lowest sell price
@@ -40,8 +40,8 @@ TEST_F(IntegrationTest, CompleteTradingScenario) {
     EXPECT_EQ(book->GetTotalAskVolume(), 450);   // 100 + 150 + 200
     
     // Phase 2: Add aggressive buy order that crosses spread
-    book->AddOrder(3001, 3, true, 200, 10055);  // Buy 200 @ 100.55
-    
+    book->AddOrder(3001, 3, true, 200, 10055, 0, 0);  // Buy 200 @ 100.55
+
     // Should match with best ask (150 @ 100.50) and leave 50 unmatched
     EXPECT_EQ(book->GetBestAsk(), 10060);        // Next best ask
     EXPECT_EQ(book->GetTotalAskVolume(), 300);   // 100 + 200 (150 was matched)
@@ -49,8 +49,8 @@ TEST_F(IntegrationTest, CompleteTradingScenario) {
     EXPECT_EQ(book->GetTotalBidVolume(), 450);   // 400 + 50 (remaining from 3001)
     
     // Phase 3: Add aggressive sell order
-    book->AddOrder(4001, 4, false, 250, 10040); // Sell 250 @ 100.40
-    
+    book->AddOrder(4001, 4, false, 250, 10040, 0, 0); // Sell 250 @ 100.40
+
     // Should match multiple bid levels
     EXPECT_LT(book->GetTotalBidVolume(), 450);   // Some bids should be matched
     
@@ -72,13 +72,13 @@ TEST_F(IntegrationTest, OrderBookDepthTest) {
     // Add sell orders (asks) at increasing prices
     for (int i = 0; i < num_levels; ++i) {
         uint64_t price = base_price + 10 + (i * 10);  // 100.10, 100.20, ...
-        book->AddOrder(1000 + i, 1, false, quantity_per_level, price);
+        book->AddOrder(1000 + i, 1, false, quantity_per_level, price, 0, 0);
     }
     
     // Add buy orders (bids) at decreasing prices
     for (int i = 0; i < num_levels; ++i) {
         uint64_t price = base_price - 10 - (i * 10);  // 99.90, 99.80, ...
-        book->AddOrder(2000 + i, 2, true, quantity_per_level, price);
+        book->AddOrder(2000 + i, 2, true, quantity_per_level, price, 0, 0);
     }
     
     // Verify spread and depth
@@ -89,8 +89,8 @@ TEST_F(IntegrationTest, OrderBookDepthTest) {
     
     // Add large market order that should walk through multiple levels
     uint64_t large_quantity = (num_levels / 2) * quantity_per_level + 50;  // 5.5 levels
-    book->AddOrder(9999, 99, true, large_quantity, base_price + 100);  // Aggressive buy
-    
+    book->AddOrder(9999, 99, true, large_quantity, base_price + 100, 0, 0);  // Aggressive buy
+
     // Should have consumed several ask levels
     EXPECT_LT(book->GetTotalAskVolume(), num_levels * quantity_per_level);
     EXPECT_GT(book->GetBestAsk(), base_price + 10);  // Best ask should have moved up
@@ -108,7 +108,7 @@ TEST_F(IntegrationTest, HighFrequencyTradingTest) {
         uint64_t quantity = 10 + (i % 50);       // Varying quantities
         
         order_ids.push_back(i + 1);
-        book->AddOrder(i + 1, i % 10, is_buy, quantity, price);
+        book->AddOrder(i + 1, i % 10, is_buy, quantity, price, 0, 0);
     }
     
     // Rapidly cancel some orders
@@ -122,7 +122,7 @@ TEST_F(IntegrationTest, HighFrequencyTradingTest) {
     
     // Add more aggressive orders
     for (int i = 0; i < 100; ++i) {
-        book->AddOrder(num_orders + i + 1, 999, i % 2 == 0, 50, 10000);
+        book->AddOrder(num_orders + i + 1, 999, i % 2 == 0, 50, 10000, 0, 0);
     }
     
     // Verify book is still in valid state
@@ -159,7 +159,7 @@ TEST_F(IntegrationTest, RandomOrderStressTest) {
             uint64_t order_id = i + 1;
             
             try {
-                book->AddOrder(order_id, i % 100, is_buy, quantity, price);
+                book->AddOrder(order_id, i % 100, is_buy, quantity, price, 0, 0);
                 active_orders.push_back(order_id);
             } catch (const std::exception&) {
                 // Duplicate order ID, skip
@@ -206,37 +206,37 @@ TEST_F(IntegrationTest, RandomOrderStressTest) {
 // Test order modification functionality
 TEST_F(IntegrationTest, OrderModificationTest) {
     // Add initial orders
-    book->AddOrder(1001, 1, true, 100, 10000);   // Buy 100 @ 100.00
-    book->AddOrder(1002, 1, false, 150, 10050);  // Sell 150 @ 100.50
-    
+    book->AddOrder(1001, 1, true, 100, 10000, 0, 0);   // Buy 100 @ 100.00
+    book->AddOrder(1002, 1, false, 150, 10050, 0, 0);  // Sell 150 @ 100.50
+
     EXPECT_EQ(book->GetBestBid(), 10000);
     EXPECT_EQ(book->GetTotalBidVolume(), 100);
     EXPECT_EQ(book->GetBestAsk(), 10050);
     EXPECT_EQ(book->GetTotalAskVolume(), 150);
     
     // Test 1: Modify quantity down (should preserve time priority)
-    book->ModifyOrder(1001, 75, 10000);  // Reduce buy order to 75
+    book->ModifyOrder(1001, 75, 10000, 0, 0);  // Reduce buy order to 75
     EXPECT_EQ(book->GetTotalBidVolume(), 75);
     EXPECT_EQ(book->GetBestBid(), 10000);
     
     // Test 2: Modify quantity up (should go to back of queue at same price)
-    book->ModifyOrder(1001, 120, 10000);  // Increase buy order to 120
+    book->ModifyOrder(1001, 120, 10000, 0, 0);  // Increase buy order to 120
     EXPECT_EQ(book->GetTotalBidVolume(), 120);
     EXPECT_EQ(book->GetBestBid(), 10000);
     
     // Test 3: Modify price (should trigger matching if crossing spread)
-    book->ModifyOrder(1002, 150, 9990);  // Move sell order to 99.90 (should match)
+    book->ModifyOrder(1002, 150, 9990, 0, 0);  // Move sell order to 99.90 (should match)
     // After matching, buy order should be fully filled, sell order should have remainder
     EXPECT_EQ(book->GetTotalBidVolume(), 0);  // Buy order should be filled
     EXPECT_EQ(book->GetTotalAskVolume(), 30); // Sell order remainder: 150 - 120 = 30
     EXPECT_EQ(book->GetBestAsk(), 9990);
     
     // Test 4: Modify non-existent order (should throw)
-    EXPECT_THROW(book->ModifyOrder(9999, 100, 10000), std::runtime_error);
-    
+    EXPECT_THROW(book->ModifyOrder(9999, 100, 10000, 0, 0), std::runtime_error);
+
     // Test 5: Modify with zero quantity (should throw)
-    EXPECT_THROW(book->ModifyOrder(1002, 0, 9990), std::invalid_argument);
-    
+    EXPECT_THROW(book->ModifyOrder(1002, 0, 9990, 0, 0), std::invalid_argument);
+
     // Clean up remaining order
     book->CancelOrder(1002);
     EXPECT_EQ(book->GetTotalAskVolume(), 0);
@@ -247,8 +247,8 @@ TEST_F(IntegrationTest, OrderModificationTest) {
 // Test edge cases and error conditions
 TEST_F(IntegrationTest, EdgeCasesAndErrorHandling) {
     // Test duplicate order ID
-    book->AddOrder(1001, 1, true, 100, 10000);
-    EXPECT_THROW(book->AddOrder(1001, 2, false, 150, 10050), std::runtime_error);
+    book->AddOrder(1001, 1, true, 100, 10000, 0, 0);
+    EXPECT_THROW(book->AddOrder(1001, 2, false, 150, 10050, 0, 0), std::runtime_error);
     
     // Clean up the test order before other tests
     book->CancelOrder(1001);
@@ -257,16 +257,16 @@ TEST_F(IntegrationTest, EdgeCasesAndErrorHandling) {
     EXPECT_THROW(book->CancelOrder(99999), std::runtime_error);
     
     // Test zero quantity (should be rejected)
-    EXPECT_THROW(book->AddOrder(2001, 2, true, 0, 10000), std::invalid_argument);
-    
+    EXPECT_THROW(book->AddOrder(2001, 2, true, 0, 10000, 0, 0), std::invalid_argument);
+
     // Test very large quantities
     const uint64_t large_qty = 1000000000ULL;  // 1 billion
-    EXPECT_NO_THROW(book->AddOrder(3001, 3, true, large_qty, 10000));
+    EXPECT_NO_THROW(book->AddOrder(3001, 3, true, large_qty, 10000, 0, 0));
     EXPECT_EQ(book->GetTotalBidVolume(), large_qty);
     
     // Test very high and low prices
-    EXPECT_NO_THROW(book->AddOrder(4001, 4, false, 100, 1));        // Very low price
-    EXPECT_NO_THROW(book->AddOrder(5001, 5, false, 100, UINT64_MAX)); // Very high price
+    EXPECT_NO_THROW(book->AddOrder(4001, 4, false, 100, 1, 0, 0));        // Very low price
+    EXPECT_NO_THROW(book->AddOrder(5001, 5, false, 100, UINT64_MAX, 0, 0)); // Very high price
 }
 
 // Test order book recovery and consistency
@@ -276,19 +276,18 @@ TEST_F(IntegrationTest, OrderBookConsistencyTest) {
     
     for (int i = 0; i < num_orders_per_side; ++i) {
         // Buy orders at decreasing prices
-        book->AddOrder(i + 1, 1, true, 100, 10000 - i);
-        
+        book->AddOrder(i + 1, 1, true, 100, 10000 - i, 0, 0);
         // Sell orders at increasing prices
-        book->AddOrder(i + 1000, 2, false, 100, 10100 + i);
+        book->AddOrder(i + 1000, 2, false, 100, 10100 + i, 0, 0);
     }
     
     uint64_t initial_bid_volume = book->GetTotalBidVolume();
     uint64_t initial_ask_volume = book->GetTotalAskVolume();
     
     // Add crossing orders that should generate trades
-    book->AddOrder(9001, 90, true, 1000, 10120);   // Aggressive buy
-    book->AddOrder(9002, 91, false, 800, 9980);    // Aggressive sell
-    
+    book->AddOrder(9001, 90, true, 1000, 10120, 0, 0);   // Aggressive buy
+    book->AddOrder(9002, 91, false, 800, 9980, 0, 0);    // Aggressive sell
+
     // Verify volumes changed due to matching
     EXPECT_NE(book->GetTotalBidVolume(), initial_bid_volume);
     EXPECT_NE(book->GetTotalAskVolume(), initial_ask_volume);

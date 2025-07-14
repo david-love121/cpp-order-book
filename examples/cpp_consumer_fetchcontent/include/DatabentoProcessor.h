@@ -72,7 +72,7 @@ public:
     // Accessors for market state
     uint64_t GetLastMboTimestamp() const { return last_mbo_timestamp_; }
     const std::string& GetCurrentSymbol() const { return current_symbol_; }
-    
+    bool ClearOrderFromMapping(uint64_t internal_order_id);    
 private:
     KeepGoing ProcessMboMessage(const MboMsg &mbo);
     KeepGoing ProcessTradeMessage(const TradeMsg &trade);
@@ -82,6 +82,7 @@ private:
     // Helper methods for order ID mapping
     uint64_t MapDatabentoOrderId(uint64_t databento_order_id, uint64_t internal_order_id);
     uint64_t GetInternalOrderId(uint64_t databento_order_id);
+    uint64_t GetDatabentoOrderId(uint64_t internal_order_id);
     uint64_t GenerateInternalOrderId();
     
     // Symbol conversion helpers

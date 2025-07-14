@@ -15,7 +15,7 @@ class IClient;
 class OrderBook {
 public:
     // Constructor and destructor
-    OrderBook() = default;
+    OrderBook() : next_order_id_(1000) {}
     ~OrderBook(); // Destructor to clean up remaining orders
     
     // Disable copy/move to avoid issues with raw pointers
@@ -25,11 +25,11 @@ public:
     OrderBook& operator=(OrderBook&&) = delete;
     
     // Public API for users
-    void AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
-                  uint64_t ts_received, uint64_t ts_executed);
-    void AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price); // Legacy version
+    uint64_t AddOrder(uint64_t databento_order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+                      uint64_t ts_received, uint64_t ts_executed);
     void CancelOrder(uint64_t order_id);
-    void ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price);
+    
+    void ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price, uint64_t new_ts_received, uint64_t new_ts_executed);
 
     // Client management
     void RegisterClient(std::shared_ptr<IClient> client);
@@ -42,6 +42,10 @@ public:
 
     uint64_t GetTotalBidVolume() const;
     uint64_t GetTotalAskVolume() const;
+    
+    // L3 Order Book data access methods
+    std::vector<std::pair<uint64_t, PriceLevel>> GetBidLevels(size_t max_levels = 20) const;
+    std::vector<std::pair<uint64_t, PriceLevel>> GetAskLevels(size_t max_levels = 20) const;
 
 private:
     // The core hybrid data structure
@@ -52,6 +56,9 @@ private:
     
     // Client management
     std::unordered_map<uint64_t, std::shared_ptr<IClient>> clients_;
+    
+    // Order ID generation
+    std::atomic<uint64_t> next_order_id_;
     
     void AddRestingOrder(Order* order);
     void RemoveRestingOrder(Order* order);
@@ -64,6 +71,7 @@ private:
     void NotifyOrderCancelled(uint64_t order_id);
     void NotifyOrderModified(uint64_t order_id, uint64_t new_quantity, uint64_t new_price);
     void NotifyOrderRejected(uint64_t order_id, const std::string& reason);
+    void NotifyOrderFilled(uint64_t order_id);
     void NotifyTopOfBookUpdate();
    
 

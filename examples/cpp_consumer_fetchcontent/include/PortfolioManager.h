@@ -38,20 +38,16 @@ struct PortfolioSnapshot {
   double realized_pnl;
   double total_pnl;
   size_t total_trades;
-  double total_cost_basis;
   double position_value;
-  double return_on_equity;
 
   PortfolioSnapshot(uint64_t ts, int64_t pos, double cur_price, double avg_cost,
-                    double unrealized, double realized, size_t trades,
-                    double cost_basis)
+                    double unrealized, double realized, size_t trades)
       : timestamp(ts), position(pos), current_price(cur_price),
         average_cost(avg_cost), unrealized_pnl(unrealized),
         realized_pnl(realized), total_pnl(realized + unrealized),
-        total_trades(trades), total_cost_basis(cost_basis),
-        position_value(cur_price * std::abs(pos)),
-        return_on_equity(
-            cost_basis != 0.0 ? (realized + unrealized) / cost_basis : 0.0) {}
+        total_trades(trades),
+        position_value(cur_price * std::abs(pos)) {}
+
 };
 
 struct RiskMetrics {
@@ -122,14 +118,11 @@ public:
     return realized_pnl_ + CalculateUnrealizedPnL();
   }
   double GetCurrentMarketPrice() const { return current_market_price_; }
-  double GetAverageCost() const { return CalculateAverageCost(); }
-  double GetTotalCostBasis() const { return total_cost_basis_; }
+  double GetTotalCostBasis() const;
   double GetPositionValue() const {
     return current_market_price_ * std::abs(running_position_);
   }
-  double GetReturnOnEquity() const {
-    return total_cost_basis_ != 0.0 ? GetTotalPnL() / total_cost_basis_ : 0.0;
-  }
+  double GetReturnOnEquity() const;
   size_t GetTotalTrades() const { return total_trades_; }
   bool IsOrderTracked(uint64_t order_id) const {
     return tracked_order_ids_.count(order_id) > 0;
@@ -148,7 +141,6 @@ private:
   std::unordered_map<uint64_t, TrackedOrder> tracked_orders_;
   int64_t running_position_ = 0;
   double realized_pnl_ = 0.0;
-  double total_cost_basis_ = 0.0;
   double current_market_price_ = 0.0;
   size_t total_trades_ = 0;
 
@@ -163,15 +155,14 @@ private:
   std::ofstream csv_file_;
   bool csv_enabled_ = false;
 
-  // Strategy integration
-  std::shared_ptr<StrategyManager> strategy_manager_;
-  std::shared_ptr<IStrategy> user_strategy_;
+
+
 
   // Helper methods
   void TakeSnapshot(uint64_t timestamp = 0);
   void WriteCSVHeader();
   void WriteSnapshotToCSV(const PortfolioSnapshot &snapshot);
   std::string TimestampToString(uint64_t timestamp_ns) const;
-  double CalculateAverageCost() const;
+  double CalculateCost() const;
   double CalculateUnrealizedPnL() const;
 };

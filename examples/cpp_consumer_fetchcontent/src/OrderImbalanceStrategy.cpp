@@ -301,7 +301,8 @@ bool OrderImbalanceStrategy::ExecuteAutoTrade(double signal, double slippage_del
     }
     
     // Place the order
-    uint64_t order_id = order_client_->SubmitOrder(GetUserId(), is_buy, quantity, price, orderbook_snapshot.timestamp, orderbook_snapshot.timestamp + slippage_delay_ns_);
+    uint64_t synthetic_databento_id = 0;  // Use 0 for strategy-generated orders
+    uint64_t order_id = order_client_->SubmitOrder(synthetic_databento_id, GetUserId(), is_buy, quantity, price, orderbook_snapshot.timestamp, orderbook_snapshot.timestamp + slippage_delay_ns_);
 
     if (order_id > 0) {
         // Record successful order placement

@@ -53,6 +53,8 @@ std::vector<Trade> PriceLevel::FillOrder(Order* order, uint64_t quantity) {
         if (!top_order) break;
         
         uint64_t fill_quantity = std::min(remaining_quantity, top_order->quantity);
+        bool top_order_closed = (top_order->quantity == fill_quantity);
+        bool aggressor_order_closed = (remaining_quantity == fill_quantity);
         Trade trade{
             Helpers::GenerateExecutionId(), // execution_id
             order->order_id, // aggressor_order_id
@@ -62,7 +64,10 @@ std::vector<Trade> PriceLevel::FillOrder(Order* order, uint64_t quantity) {
             price_, // price
             fill_quantity, // quantity
             order->ts_received, // ts_received (from aggressor order)
-            order->ts_executed  // ts_executed (from aggressor order - should be historical timestamp)
+            order->ts_executed,  // ts_executed (from aggressor order - should be historical timestamp)
+            aggressor_order_closed,
+            top_order_closed
+
         };
         trades.push_back(trade);
         

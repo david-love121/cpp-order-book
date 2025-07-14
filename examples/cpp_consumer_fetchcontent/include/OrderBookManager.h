@@ -43,7 +43,6 @@ private:
     uint64_t tracked_user_id_;
     uint64_t slippage_delay_ns_;
     std::atomic<bool> running_{false};
-    std::atomic<uint64_t> next_order_id_{1000};
     
     // Current market state for orchestration
     std::string current_symbol_;
@@ -65,10 +64,10 @@ public:
     uint64_t GetTotalAskVolume() const override;
     uint64_t GetSpread() const override;
     uint64_t GetMidPrice() const override;
-    uint64_t SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+    uint64_t SubmitOrder(uint64_t databento_order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
                                 uint64_t ts_received, uint64_t ts_executed) override;
     void CancelOrder(uint64_t order_id) override;
-    void ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price) override;
+    void ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price, uint64_t new_ts_received, uint64_t new_ts_executed) override;
     // ========== IClient Event Handlers ==========
     
     void OnTradeExecuted(const Trade &trade) override;
@@ -77,6 +76,7 @@ public:
     void OnOrderModified(uint64_t order_id, uint64_t new_quantity,
                          uint64_t new_price) override;
     void OnOrderRejected(uint64_t order_id, const std::string &reason) override;
+    void OnOrderFilled(uint64_t order_id) override;
     void OnTopOfBookUpdate(uint64_t best_bid, uint64_t best_ask,
                            uint64_t bid_volume, uint64_t ask_volume) override;
 
@@ -128,7 +128,6 @@ public:
 
 private:
     // Internal orchestration methods
-    uint64_t GenerateOrderId();
     void RouteToPortfolio(const Trade& trade);
     void RouteToTopOfBookTracker(uint64_t best_bid, uint64_t best_ask,
                                 uint64_t bid_volume, uint64_t ask_volume);

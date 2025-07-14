@@ -8,67 +8,28 @@
 #include <chrono>
 #include <algorithm>
 
-// Simplified AddOrder logic for illustration
-void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price) {
-    // 1. Validate inputs
-    if (quantity == 0) {
-        NotifyOrderRejected(order_id, "Order quantity must be greater than zero");
-        throw std::invalid_argument("Order quantity must be greater than zero");
-    }
-    
-    // 2. Check for existing order
-    if (order_map_.count(order_id)) {
-        // Handle error: duplicate order ID
-        NotifyOrderRejected(order_id, "Order ID already exists");
-        throw std::runtime_error("Order ID already exists");
-        return;
-    }
-
-    // 3. Create new order object (from a memory pool in a real implementation)
-    // Get current Unix timestamp in microseconds for high precision - use for both received and executed
-    uint64_t timestamp = Helpers::GetTimeStamp();
-    Order* new_order = new Order{order_id, user_id, is_buy, quantity, price, timestamp, timestamp};
-
-    // 4. Match against the book
-    std::vector<Trade> executed_trades = MatchOrders(new_order);
-    
-    // Notify clients of executed trades
-    for (const auto& trade : executed_trades) {
-        NotifyTradeExecuted(trade);
-    }
-
-    // 5. If order has remaining quantity, add it as a resting order
-    if (new_order->quantity > 0) {
-        AddRestingOrder(new_order);
-        // Notify clients that order was acknowledged
-        NotifyOrderAcknowledged(order_id);
-        // Notify top of book update since we added a resting order
-        NotifyTopOfBookUpdate();
-    } else {
-        // Order fully filled, release memory
-        delete new_order;
-    }
-}
 
 // Timestamp-aware AddOrder that uses historical timestamps
-void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
-                        uint64_t ts_received, uint64_t ts_executed) {
-    // 1. Validate inputs
+uint64_t OrderBook::AddOrder(uint64_t databento_order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+                            uint64_t ts_received, uint64_t ts_executed) {
+    // 1. Generate internal order ID
+    uint64_t internal_order_id = next_order_id_.fetch_add(1);
+    
+    // 2. Validate inputs
     if (quantity == 0) {
-        NotifyOrderRejected(order_id, "Order quantity must be greater than zero");
+        NotifyOrderRejected(internal_order_id, "Order quantity must be greater than zero");
         throw std::invalid_argument("Order quantity must be greater than zero");
     }
     
-    // 2. Check for existing order
-    if (order_map_.count(order_id)) {
+    // 3. Check for existing order (should not happen with atomic counter)
+    if (order_map_.count(internal_order_id)) {
         // Handle error: duplicate order ID
-        NotifyOrderRejected(order_id, "Order ID already exists");
+        NotifyOrderRejected(internal_order_id, "Order ID already exists");
         throw std::runtime_error("Order ID already exists");
-        return;
     }
 
-    // 3. Create new order object using provided timestamps
-    Order* new_order = new Order{order_id, user_id, is_buy, quantity, price, ts_received, ts_executed};
+    // 4. Create new order object using provided timestamps
+    Order* new_order = new Order{internal_order_id, user_id, is_buy, quantity, price, ts_received, ts_executed};
 
     // 4. Match against the book
     std::vector<Trade> executed_trades = MatchOrders(new_order);
@@ -82,13 +43,16 @@ void OrderBook::AddOrder(uint64_t order_id, uint64_t user_id, bool is_buy, uint6
     if (new_order->quantity > 0) {
         AddRestingOrder(new_order);
         // Notify clients that order was acknowledged
-        NotifyOrderAcknowledged(order_id);
+        NotifyOrderAcknowledged(internal_order_id);
         // Notify top of book update since we added a resting order
         NotifyTopOfBookUpdate();
     } else {
-        // Order fully filled, release memory
+        // Order fully filled, notify clients and release memory
+        NotifyOrderFilled(internal_order_id);
         delete new_order;
     }
+    
+    return internal_order_id;
 }
 
 // Simplified cancellation logic
@@ -282,7 +246,7 @@ void OrderBook::RemoveRestingOrder(Order* order) {
 }
 
 // Order modification logic
-void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price) {
+void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price, uint64_t new_ts_received, uint64_t new_ts_executed) {
     // 1. Validate inputs
     if (new_quantity == 0) {
         NotifyOrderRejected(order_id, "Modified order quantity must be greater than zero");
@@ -293,7 +257,8 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
     auto it = order_map_.find(order_id);
     if (it == order_map_.end()) {
         NotifyOrderRejected(order_id, "Order ID not found");
-        throw std::runtime_error("Order ID not found");
+        //throw std::runtime_error("Order ID not found");
+        return;
     }
     
     Order* existing_order = it->second;
@@ -309,8 +274,8 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
     uint64_t original_price = existing_order->price;
     bool is_buy = existing_order->is_buy_side;
     uint64_t user_id = existing_order->user_id;
-    uint64_t ts_received = existing_order->ts_received;
-    uint64_t ts_executed = existing_order->ts_executed;
+    
+
     
     // 5. Use cancel-and-replace approach for simplicity and correctness
     // This ensures proper time priority and matching logic
@@ -334,13 +299,7 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
     // Delete the old order
     delete existing_order;
     
-    // Create new order with modified parameters
-    // For quantity reductions, keep original timestamps to preserve time priority
-    // For other changes, use new timestamp for ts_executed
-    uint64_t new_ts_received = ts_received; // Always preserve original received time
-    uint64_t new_ts_executed = (new_price == original_price && new_quantity <= original_quantity) ? 
-                             ts_executed : Helpers::GetTimeStamp();
-    
+
     Order* new_order = new Order{order_id, user_id, is_buy, new_quantity, new_price, new_ts_received, new_ts_executed};
     
     // Match against the book (this handles the matching logic properly)
@@ -357,7 +316,8 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
         // Notify clients that order was modified successfully
         NotifyOrderModified(order_id, new_quantity, new_price);
     } else {
-        // Order fully filled, release memory
+        // Order fully filled during modify, notify clients and release memory
+        NotifyOrderFilled(order_id);
         delete new_order;
     }
     
@@ -455,6 +415,16 @@ void OrderBook::NotifyOrderRejected(uint64_t order_id, const std::string& reason
     }
 }
 
+void OrderBook::NotifyOrderFilled(uint64_t order_id) {
+    for (const auto& [client_id, client] : clients_) {
+        try {
+            client->OnOrderFilled(order_id);
+        } catch (const std::exception& e) {
+            std::cerr << "Error notifying client " << client_id << " of order filled: " << e.what() << std::endl;
+        }
+    }
+}
+
 void OrderBook::NotifyTopOfBookUpdate() {
     uint64_t best_bid = GetBestBid();
     uint64_t best_ask = GetBestAsk();
@@ -484,4 +454,33 @@ void OrderBook::NotifyTopOfBookUpdate() {
             std::cerr << "Error notifying client " << client_id << " of TOB update: " << e.what() << std::endl;
         }
     }
+}
+
+// L3 Order Book data access methods
+std::vector<std::pair<uint64_t, PriceLevel>> OrderBook::GetBidLevels(size_t max_levels) const {
+    std::vector<std::pair<uint64_t, PriceLevel>> result;
+    result.reserve(std::min(max_levels, bids_.size()));
+    
+    size_t count = 0;
+    for (const auto& [price, level] : bids_) {
+        if (count >= max_levels) break;
+        result.emplace_back(price, level);
+        ++count;
+    }
+    
+    return result;
+}
+
+std::vector<std::pair<uint64_t, PriceLevel>> OrderBook::GetAskLevels(size_t max_levels) const {
+    std::vector<std::pair<uint64_t, PriceLevel>> result;
+    result.reserve(std::min(max_levels, asks_.size()));
+    
+    size_t count = 0;
+    for (const auto& [price, level] : asks_) {
+        if (count >= max_levels) break;
+        result.emplace_back(price, level);
+        ++count;
+    }
+    
+    return result;
 }

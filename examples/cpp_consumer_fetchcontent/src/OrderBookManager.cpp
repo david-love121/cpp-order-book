@@ -13,6 +13,7 @@ OrderBookManager::OrderBookManager(uint64_t slippage_delay_ns, uint64_t tracked_
     portfolio_manager_ = std::make_shared<PortfolioManager>("portfolio_" + std::to_string(tracked_user_id_) + ".csv");
     tob_tracker_ = std::make_shared<TopOfBookTracker>();
     
+    
     // Don't register here - will be done in Initialize()
 }
 
@@ -40,16 +41,19 @@ OrderBookSnapshot OrderBookManager::GetOrderBookSnapshot() const {
 
 // IClient Interface Implementation
 
-uint64_t OrderBookManager::SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+uint64_t OrderBookManager::SubmitOrder(uint64_t databento_order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
                                 uint64_t ts_received, uint64_t ts_executed) {
     if (!order_book_) {
         std::cerr << "[OrderBookManager] Cannot submit order - order book not initialized" << std::endl;
         return 0;
     }
-
-    uint64_t order_id = next_order_id_.fetch_add(1);
-    order_book_->AddOrder(order_id, user_id, is_buy, quantity, price, ts_received, ts_executed);
-    return order_id;
+    
+    uint64_t internal_order_id = order_book_->AddOrder(databento_order_id, user_id, is_buy, quantity, price, ts_received, ts_executed);
+    portfolio_manager_->OnOrderSubmitted(internal_order_id, user_id, is_buy, quantity, price, ts_received);
+    std::cout << "[OrderBookManager] Submitting ID " << internal_order_id << " order for user " << user_id 
+              << ": " << (is_buy ? "BUY" : "SELL") << " " << quantity 
+              << "@" << (price / 100.0) << std::endl;
+    return internal_order_id;
 }
 void OrderBookManager::CancelOrder(uint64_t order_id) {
     if (!order_book_) {
@@ -59,12 +63,12 @@ void OrderBookManager::CancelOrder(uint64_t order_id) {
     order_book_->CancelOrder(order_id);
     return;
 }
-void OrderBookManager::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price) {
+void OrderBookManager::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price, uint64_t new_ts_received, uint64_t new_ts_executed) {
     if (!order_book_) {
         std::cerr << "[OrderBookManager] Cannot modify order - order book not initialized" << std::endl;
         return;
     }
-    order_book_->ModifyOrder(order_id, new_quantity, new_price);
+    order_book_->ModifyOrder(order_id, new_quantity, new_price, new_ts_received, new_ts_executed);
     return;
 }
 
@@ -101,6 +105,14 @@ uint64_t OrderBookManager::GetMidPrice() const {
 void OrderBookManager::OnTradeExecuted(const Trade &trade) {
     // Route to portfolio manager
     RouteToPortfolio(trade);
+    if (trade.aggressor_order_closed) {
+        data_processor_->ClearOrderFromMapping(trade.aggressor_order_id);
+    }
+    // Clear the order in DatabentoProcessor mapping
+    if (trade.resting_order_closed) {
+        data_processor_->ClearOrderFromMapping(trade.resting_order_id);
+    }
+
 }
 
 void OrderBookManager::OnOrderAcknowledged(uint64_t /*order_id*/) {
@@ -110,7 +122,7 @@ void OrderBookManager::OnOrderAcknowledged(uint64_t /*order_id*/) {
 void OrderBookManager::OnOrderCancelled(uint64_t order_id) {
     // Handle order cancellation notification (order already cancelled by OrderBook)
     std::cout << "[OrderBookManager] Order " << order_id << " cancelled - notifying strategy" << std::endl;
-    
+    data_processor_->ClearOrderFromMapping(order_id);
     // Notify strategy of order book change
     NotifyStrategyOfOrderBookChange();
 }
@@ -129,11 +141,19 @@ void OrderBookManager::OnOrderRejected(uint64_t order_id, const std::string &rea
     std::cerr << "Order " << order_id << " rejected: " << reason << std::endl;
 }
 
+void OrderBookManager::OnOrderFilled(uint64_t order_id) {
+    // Handle order filled notification (order was fully executed and removed)
+    std::cout << "[OrderBookManager] Order " << order_id << " filled completely - clearing mapping" << std::endl;
+    data_processor_->ClearOrderFromMapping(order_id);
+    // Notify strategy of order book change
+    NotifyStrategyOfOrderBookChange();
+}
+
 void OrderBookManager::OnTopOfBookUpdate(uint64_t best_bid, uint64_t best_ask,
                        uint64_t bid_volume, uint64_t ask_volume) {
-    // Route to TOB tracker and notify strategy of order book changes
+    // Route to TOB tracker of order book changes
     RouteToTopOfBookTracker(best_bid, best_ask, bid_volume, ask_volume);
-    NotifyStrategyOfOrderBookChange();
+
 }
 
 void OrderBookManager::Initialize() {
@@ -145,12 +165,36 @@ void OrderBookManager::InitializeAfterConstruction() {
     // Register ourselves as a client of the order book now that shared_ptr is available
     if (order_book_) {
         try {
-            order_book_->RegisterClient(shared_from_this());
+            order_book_->RegisterClient(shared_from_this());     
             std::cout << "[OrderBookManager] Successfully registered as order book client" << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "[OrderBookManager] Error registering as client: " << e.what() << std::endl;
         }
     }
+    auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
+                "Historical_OrderImbalance",
+                tracked_user_id_,
+                0.10,  // 10% imbalance threshold for real market data
+                30     // 30-snapshot lookback window for more data
+            );
+
+        // Configure strategy parameters for historical analysis
+    order_imbalance_strategy->SetSignalThreshold(0.05);  // 5% signal threshold
+    order_imbalance_strategy->SetBaseQuantity(5);        // 5 contracts for trading
+    order_imbalance_strategy->SetMomentumFactor(1.2);    // Conservative momentum
+    order_imbalance_strategy->SetDecayFactor(0.98);      // Slower decay for analysis
+    order_imbalance_strategy->SetSlippageDelay(slippage_delay_ns_); // 2ms slippage to match manager
+        // Enable auto-trading with appropriate settings
+        
+    order_imbalance_strategy->EnableAutoTrading(true);   // Enable auto-trading
+    order_imbalance_strategy->SetMinSignalForTrade(0.05); // 5% minimum signal for trading
+    order_imbalance_strategy->SetMinOrderInterval(1000000000); // 1 second between orders
+    order_imbalance_strategy->SetMaxOrdersPerMinute(10); // Max 10 orders per minute
+
+    order_imbalance_strategy->SetPortfolioManager(portfolio_manager_);
+    order_imbalance_strategy->SetOrderClient(shared_from_this());
+    SetStrategy(order_imbalance_strategy);
+    
 }
 
 void OrderBookManager::Shutdown() {
@@ -262,9 +306,6 @@ std::shared_ptr<DatabentoProcessor> OrderBookManager::GetDataProcessor() const {
 
 // Private methods
 
-uint64_t OrderBookManager::GenerateOrderId() {
-    return next_order_id_++;
-}
 
 void OrderBookManager::RouteToPortfolio(const Trade& trade) {
     if (portfolio_manager_ && IsUserTracked(trade.aggressor_user_id)) {

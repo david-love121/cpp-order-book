@@ -42,16 +42,33 @@ void PortfolioManager::OnOrderSubmitted(uint64_t order_id, uint64_t user_id,
   tracked_order_ids_.insert(order_id);
   tracked_orders_.emplace(
       order_id, TrackedOrder(order_id, is_buy, quantity, price, timestamp));
+  current_market_price_ = static_cast<double>(price);
+
+  // Update position and P&L based on order commitment
+  int64_t position_change = is_buy ? static_cast<int64_t>(quantity) : -static_cast<int64_t>(quantity);
+  running_position_ += position_change;
+
+  // Record cash flow as realized P&L
+  if (is_buy) {
+    // Long order: negative cash flow (paying money)
+    realized_pnl_ -= static_cast<double>(quantity) * static_cast<double>(price);
+  } else {
+    // Short order: positive cash flow (receiving money)
+    realized_pnl_ += static_cast<double>(quantity) * static_cast<double>(price);
+  }
+
+  total_trades_++;
 
   std::cout << "[PORTFOLIO] Tracking order " << order_id << " for user "
             << user_id << " (" << (is_buy ? "BUY" : "SELL") << " " << quantity
-            << " @ " << price << ")" << std::endl;
+            << " @ " << price << "). Position: " << running_position_ << std::endl;
+
+  TakeSnapshot(timestamp);
 }
 
 void PortfolioManager::OnTradeExecuted(const Trade &trade) {
-  bool aggressor_tracked =
-      tracked_order_ids_.count(trade.aggressor_order_id) > 0;
-  bool resting_tracked = tracked_order_ids_.count(trade.resting_order_id) > 0;
+  bool aggressor_tracked = trade.aggressor_user_id == TRACKED_USER_ID;
+  bool resting_tracked = trade.resting_user_id == TRACKED_USER_ID;
 
   if (!aggressor_tracked && !resting_tracked) {
     current_market_price_ = static_cast<double>(trade.price);
@@ -60,82 +77,23 @@ void PortfolioManager::OnTradeExecuted(const Trade &trade) {
 
   current_market_price_ = static_cast<double>(trade.price);
 
-  int64_t position_change = 0;
-  double trade_cost = 0.0;
-
+  // Update remaining quantities for executed orders
   if (aggressor_tracked) {
     auto it = tracked_orders_.find(trade.aggressor_order_id);
     if (it != tracked_orders_.end()) {
-      int64_t qty_change = it->second.is_buy
-                               ? static_cast<int64_t>(trade.quantity)
-                               : -static_cast<int64_t>(trade.quantity);
-      position_change += qty_change;
-
       it->second.remaining_quantity -= trade.quantity;
-
-      if (it->second.is_buy) {
-        trade_cost += static_cast<double>(trade.quantity * trade.price);
-      } else {
-        trade_cost -= static_cast<double>(trade.quantity * trade.price);
-      }
     }
   }
 
   if (resting_tracked) {
     auto it = tracked_orders_.find(trade.resting_order_id);
     if (it != tracked_orders_.end()) {
-      int64_t qty_change = it->second.is_buy
-                               ? static_cast<int64_t>(trade.quantity)
-                               : -static_cast<int64_t>(trade.quantity);
-      position_change += qty_change;
-
       it->second.remaining_quantity -= trade.quantity;
-
-      if (it->second.is_buy) {
-        trade_cost += static_cast<double>(trade.quantity * trade.price);
-      } else {
-        trade_cost -= static_cast<double>(trade.quantity * trade.price);
-      }
     }
   }
-
-  if ((running_position_ > 0 && position_change < 0) ||
-      (running_position_ < 0 && position_change > 0)) {
-    double avg_cost = CalculateAverageCost();
-    double realized_qty =
-        std::min(static_cast<double>(std::abs(position_change)),
-                 static_cast<double>(std::abs(running_position_)));
-
-    if (running_position_ > 0) {
-      realized_pnl_ += realized_qty * (current_market_price_ - avg_cost);
-    } else {
-      realized_pnl_ += realized_qty * (avg_cost - current_market_price_);
-    }
-  }
-
-  int64_t old_position = running_position_;
-  running_position_ += position_change;
-
-  if (position_change > 0) {
-    total_cost_basis_ += std::abs(trade_cost);
-  } else if (position_change < 0) {
-    if (old_position != 0) {
-      double reduction_ratio = static_cast<double>(std::abs(position_change)) /
-                               static_cast<double>(std::abs(old_position));
-      total_cost_basis_ *= (1.0 - reduction_ratio);
-    }
-  }
-
-  if (running_position_ == 0) {
-    total_cost_basis_ = 0.0;
-  }
-
-  total_trades_++;
 
   std::cout << "[PORTFOLIO] Trade executed involving tracked order(s). "
-               "Position change: "
-            << (position_change >= 0 ? "+" : "") << position_change
-            << ", Running position: " << running_position_
+               "Running position: " << running_position_
             << ", Price: " << current_market_price_ << std::endl;
 
   TakeSnapshot(trade.ts_executed);
@@ -179,23 +137,21 @@ void PortfolioManager::PrintPortfolioSummary() const {
   std::cout << "Running Position: " << running_position_ << " contracts"
             << std::endl;
   std::cout << "Current Market Price: $" << std::fixed << std::setprecision(2)
-            << current_market_price_ << std::endl;
-  std::cout << "Average Cost: $" << std::fixed << std::setprecision(2)
-            << CalculateAverageCost() << std::endl;
-  std::cout << "Total Cost Basis: $" << std::fixed << std::setprecision(2)
-            << total_cost_basis_ << std::endl;
+            << (current_market_price_ / 100.0) << std::endl;
+  std::cout << "Current Cost: $" << std::fixed << std::setprecision(2)
+            << (CalculateCost() / 100.0) << std::endl;
   std::cout << "Position Value: $" << std::fixed << std::setprecision(2)
-            << (current_market_price_ * std::abs(running_position_))
+            << ((current_market_price_ * std::abs(running_position_)) / 100.0)
             << std::endl;
   std::cout << "Realized P&L: $" << std::fixed << std::setprecision(2)
-            << realized_pnl_ << std::endl;
+            << (realized_pnl_ / 100.0) << std::endl;
   std::cout << "Unrealized P&L: $" << std::fixed << std::setprecision(2)
-            << CalculateUnrealizedPnL() << std::endl;
+            << (CalculateUnrealizedPnL() / 100.0) << std::endl;
   std::cout << "Total P&L: $" << std::fixed << std::setprecision(2)
-            << GetTotalPnL() << std::endl;
+            << (GetTotalPnL() / 100.0) << std::endl;
 
-  if (total_cost_basis_ != 0.0) {
-    double return_pct = (GetTotalPnL() / total_cost_basis_) * 100.0;
+  if (GetTotalCostBasis() != 0.0) {
+    double return_pct = (GetTotalPnL() / GetTotalCostBasis()) * 100.0;
     std::cout << "Return on Equity: " << std::fixed << std::setprecision(2)
               << return_pct << "%" << std::endl;
   }
@@ -206,13 +162,13 @@ void PortfolioManager::PrintPortfolioSummary() const {
   auto risk_metrics = CalculateRiskMetrics();
   std::cout << "\n--- Risk Metrics ---" << std::endl;
   std::cout << "Max Position Value: $" << std::fixed << std::setprecision(2)
-            << risk_metrics.max_position_value << std::endl;
+            << (risk_metrics.max_position_value / 100.0) << std::endl;
   std::cout << "Volatility: " << std::fixed << std::setprecision(4)
             << risk_metrics.volatility << std::endl;
   std::cout << "Sharpe Ratio: " << std::fixed << std::setprecision(4)
             << risk_metrics.sharpe_ratio << std::endl;
   std::cout << "Max Drawdown: $" << std::fixed << std::setprecision(2)
-            << risk_metrics.max_drawdown << std::endl;
+            << (risk_metrics.max_drawdown / 100.0) << std::endl;
   std::cout << "VaR 95%: " << std::fixed << std::setprecision(4)
             << risk_metrics.var_95 << std::endl;
 
@@ -224,15 +180,15 @@ void PortfolioManager::PrintPortfolioSummary() const {
   std::cout << "Winning Trades: " << perf_stats.winning_trades << std::endl;
   std::cout << "Losing Trades: " << perf_stats.losing_trades << std::endl;
   std::cout << "Average Win: $" << std::fixed << std::setprecision(2)
-            << perf_stats.avg_win << std::endl;
+            << (perf_stats.avg_win / 100.0) << std::endl;
   std::cout << "Average Loss: $" << std::fixed << std::setprecision(2)
-            << perf_stats.avg_loss << std::endl;
+            << (perf_stats.avg_loss / 100.0) << std::endl;
   std::cout << "Profit Factor: " << std::fixed << std::setprecision(2)
             << perf_stats.profit_factor << std::endl;
   std::cout << "Largest Win: $" << std::fixed << std::setprecision(2)
-            << perf_stats.largest_win << std::endl;
+            << (perf_stats.largest_win / 100.0) << std::endl;
   std::cout << "Largest Loss: $" << std::fixed << std::setprecision(2)
-            << perf_stats.largest_loss << std::endl;
+            << (perf_stats.largest_loss / 100.0) << std::endl;
   if (csv_enabled_) {
     std::cout << "CSV Output: " << csv_filename_ << " (" << snapshots_.size()
               << " snapshots)" << std::endl;
@@ -281,7 +237,7 @@ void PortfolioManager::EnableCSV(const std::string &filename) {
                    "0=flat)\n";
       csv_file_ << "#   current_price: Latest market price in dollars "
                    "(converted from ticks)\n";
-      csv_file_ << "#   average_cost: Average cost basis per unit in dollars\n";
+      csv_file_ << "#   cost: Cost basis per unit in dollars\n";
       csv_file_ << "#   unrealized_pnl: Mark-to-market P&L for current "
                    "position in dollars\n";
       csv_file_ << "#   realized_pnl: Cumulative realized P&L from closed "
@@ -361,7 +317,7 @@ void PortfolioManager::WriteSnapshotToCSV(const PortfolioSnapshot &snapshot) {
   double unrealized_pnl_dollars = snapshot.unrealized_pnl / 100.0;
   double realized_pnl_dollars = snapshot.realized_pnl / 100.0;
   double total_pnl_dollars = snapshot.total_pnl / 100.0;
-  double total_cost_basis_dollars = snapshot.total_cost_basis / 100.0;
+
   double position_value_dollars = snapshot.position_value / 100.0;
 
   csv_file_ << timestamp_str << "," << snapshot.position << "," << std::fixed
@@ -369,12 +325,9 @@ void PortfolioManager::WriteSnapshotToCSV(const PortfolioSnapshot &snapshot) {
             << std::fixed << std::setprecision(2) << average_cost_dollars << ","
             << std::fixed << std::setprecision(2) << unrealized_pnl_dollars
             << "," << std::fixed << std::setprecision(2) << realized_pnl_dollars
-            << "," << std::fixed << std::setprecision(2) << total_pnl_dollars
-            << "," << snapshot.total_trades << "," << std::fixed
-            << std::setprecision(2) << total_cost_basis_dollars << ","
-            << std::fixed << std::setprecision(2) << position_value_dollars
-            << "," << std::fixed << std::setprecision(6)
-            << snapshot.return_on_equity << "\n";
+            << "," << std::setprecision(2) << total_pnl_dollars
+            << "," << snapshot.total_trades << "," << std::setprecision(2) << position_value_dollars
+            << "," << std::setprecision(6) << "\n";
 
   static int write_count = 0;
   if (++write_count % 5 == 0) {
@@ -382,11 +335,57 @@ void PortfolioManager::WriteSnapshotToCSV(const PortfolioSnapshot &snapshot) {
   }
 }
 
-double PortfolioManager::CalculateAverageCost() const {
-  if (running_position_ == 0 || total_cost_basis_ == 0.0) {
+double PortfolioManager::CalculateCost() const {
+  if (running_position_ == 0) {
     return 0.0;
   }
-  return total_cost_basis_ / static_cast<double>(std::abs(running_position_));
+
+  double total_cost = 0.0;
+  int64_t total_position = 0;
+
+  // Sum up costs from all tracked orders that contributed to current position
+  for (const auto& [order_id, order] : tracked_orders_) {
+    uint64_t executed_quantity = order.quantity - order.remaining_quantity;
+    if (executed_quantity > 0) {
+      double order_cost = static_cast<double>(executed_quantity * order.price);
+      if (order.is_buy) {
+        total_cost += order_cost;
+        total_position += static_cast<int64_t>(executed_quantity);
+      } else {
+        total_cost -= order_cost;
+        total_position -= static_cast<int64_t>(executed_quantity);
+      }
+    }
+  }
+
+  if (total_position == 0) {
+    return 0.0;
+  }
+
+  return total_cost / static_cast<double>(std::abs(total_position));
+}
+
+double PortfolioManager::GetTotalCostBasis() const {
+  if (running_position_ == 0) {
+    return 0.0;
+  }
+
+  double total_cost_basis = 0.0;
+
+  // Sum up the cost basis from all executed orders
+  for (const auto& [order_id, order] : tracked_orders_) {
+    uint64_t executed_quantity = order.quantity - order.remaining_quantity;
+    if (executed_quantity > 0) {
+      total_cost_basis += static_cast<double>(executed_quantity * order.price);
+    }
+  }
+
+  return total_cost_basis;
+}
+
+double PortfolioManager::GetReturnOnEquity() const {
+  double cost_basis = GetTotalCostBasis();
+  return cost_basis != 0.0 ? GetTotalPnL() / cost_basis : 0.0;
 }
 
 double PortfolioManager::CalculateUnrealizedPnL() const {
@@ -394,19 +393,19 @@ double PortfolioManager::CalculateUnrealizedPnL() const {
     return 0.0;
   }
 
-  double avg_cost = CalculateAverageCost();
-  if (avg_cost == 0.0) {
+  double cost = CalculateCost();
+  if (cost == 0.0) {
     return 0.0;
   }
 
   if (running_position_ > 0) {
     // Long position
     return static_cast<double>(running_position_) *
-           (current_market_price_ - avg_cost);
+           (current_market_price_ - cost);
   } else {
     // Short position
     return static_cast<double>(std::abs(running_position_)) *
-           (avg_cost - current_market_price_);
+           (cost - current_market_price_);
   }
 }
 
@@ -418,9 +417,9 @@ void PortfolioManager::TakeSnapshot(uint64_t timestamp) {
   }
 
   PortfolioSnapshot snapshot(timestamp, running_position_,
-                             current_market_price_, CalculateAverageCost(),
+                             current_market_price_, CalculateCost(),
                              CalculateUnrealizedPnL(), realized_pnl_,
-                             total_trades_, total_cost_basis_);
+                             total_trades_);
 
   snapshots_.push_back(snapshot);
 
@@ -447,48 +446,13 @@ void PortfolioManager::DisablePeriodicSnapshots() {
   std::cout << "[PORTFOLIO] Periodic snapshots disabled" << std::endl;
 }
 
-void PortfolioManager::SetStrategyManager(
-    std::shared_ptr<StrategyManager> strategy_mgr) {
-  strategy_manager_ = strategy_mgr;
-  std::cout << "[PORTFOLIO] Strategy manager set" << std::endl;
-}
 
-void PortfolioManager::SetUserStrategy(std::shared_ptr<IStrategy> strategy) {
-  if (strategy && strategy->GetUserId() != TRACKED_USER_ID) {
-    std::cout << "[PORTFOLIO] Warning: Strategy user ID ("
-              << strategy->GetUserId() << ") does not match tracked user ID ("
-              << TRACKED_USER_ID << ")" << std::endl;
-  }
-
-  user_strategy_ = strategy;
-
-  if (strategy) {
-    std::cout << "[PORTFOLIO] User strategy set: " << strategy->GetName()
-              << " for user " << strategy->GetUserId() << std::endl;
-
-    // Set this portfolio manager in the strategy
-    strategy->SetPortfolioManager(shared_from_this());
-
-    // Add to strategy manager if available
-    if (strategy_manager_) {
-      strategy_manager_->AddStrategy(strategy->GetUserId(), strategy);
-    }
-  } else {
-    std::cout << "[PORTFOLIO] User strategy cleared" << std::endl;
-
-    // Remove from strategy manager if available
-    if (strategy_manager_) {
-      strategy_manager_->RemoveStrategy(TRACKED_USER_ID);
-    }
-  }
-}
 
 void PortfolioManager::Reset() {
   tracked_order_ids_.clear();
   tracked_orders_.clear();
   running_position_ = 0;
   realized_pnl_ = 0.0;
-  total_cost_basis_ = 0.0;
   current_market_price_ = 0.0;
   total_trades_ = 0;
   snapshots_.clear();
@@ -625,80 +589,26 @@ bool PortfolioManager::ExportData(const std::string &format,
 
     export_file
         << "timestamp,position,current_price,average_cost,unrealized_pnl,"
-           "realized_pnl,total_pnl,total_trades,total_cost_basis,position_"
-           "value,return_on_equity\n";
+           "realized_pnl,total_pnl,total_trades,position_"
+           "value\n";
 
     for (const auto &snapshot : snapshots_) {
       std::string timestamp_str = TimestampToString(snapshot.timestamp);
       export_file << timestamp_str << "," << snapshot.position << ","
                   << std::fixed << std::setprecision(2)
-                  << snapshot.current_price << "," << snapshot.average_cost
-                  << "," << snapshot.unrealized_pnl << ","
-                  << snapshot.realized_pnl << "," << snapshot.total_pnl << ","
-                  << snapshot.total_trades << "," << snapshot.total_cost_basis
-                  << "," << snapshot.position_value << ","
-                  << std::setprecision(6) << snapshot.return_on_equity << "\n";
+                  << (snapshot.current_price / 100.0) << "," << (snapshot.average_cost / 100.0)
+                  << "," << (snapshot.unrealized_pnl / 100.0) << ","
+                  << (snapshot.realized_pnl / 100.0) << "," << (snapshot.total_pnl / 100.0) << ","
+                  << (snapshot.position_value / 100.0) << "," << "\n";
     }
 
     export_file.close();
     std::cout << "[PORTFOLIO] Data exported to: " << filename << std::endl;
     return true;
 
-  } else if (format == "json") {
-    std::ofstream export_file(filename);
-    if (!export_file.is_open()) {
-      std::cout << "[PORTFOLIO] Failed to open export file: " << filename
-                << std::endl;
-      return false;
-    }
-
-    export_file << "{\n";
-    export_file << "  \"user_id\": " << TRACKED_USER_ID << ",\n";
-    export_file << "  \"summary\": {\n";
-    export_file << "    \"total_trades\": " << total_trades_ << ",\n";
-    export_file << "    \"running_position\": " << running_position_ << ",\n";
-    export_file << "    \"realized_pnl\": " << realized_pnl_ << ",\n";
-    export_file << "    \"unrealized_pnl\": " << CalculateUnrealizedPnL()
-                << ",\n";
-    export_file << "    \"total_pnl\": " << GetTotalPnL() << ",\n";
-    export_file << "    \"current_price\": " << current_market_price_ << "\n";
-    export_file << "  },\n";
-
-    auto risk_metrics = CalculateRiskMetrics();
-    export_file << "  \"risk_metrics\": {\n";
-    export_file << "    \"max_position_value\": "
-                << risk_metrics.max_position_value << ",\n";
-    export_file << "    \"volatility\": " << risk_metrics.volatility << ",\n";
-    export_file << "    \"sharpe_ratio\": " << risk_metrics.sharpe_ratio
-                << ",\n";
-    export_file << "    \"max_drawdown\": " << risk_metrics.max_drawdown
-                << ",\n";
-    export_file << "    \"var_95\": " << risk_metrics.var_95 << "\n";
-    export_file << "  },\n";
-
-    export_file << "  \"snapshots\": [\n";
-    for (size_t i = 0; i < snapshots_.size(); ++i) {
-      const auto &snapshot = snapshots_[i];
-      export_file << "    {\n";
-      export_file << "      \"timestamp\": \""
-                  << TimestampToString(snapshot.timestamp) << "\",\n";
-      export_file << "      \"position\": " << snapshot.position << ",\n";
-      export_file << "      \"current_price\": " << snapshot.current_price
-                  << ",\n";
-      export_file << "      \"total_pnl\": " << snapshot.total_pnl << "\n";
-      export_file << "    }";
-      if (i < snapshots_.size() - 1) {
-        export_file << ",";
-      }
-      export_file << "\n";
-    }
-    export_file << "  ]\n";
-    export_file << "}\n";
-
-    export_file.close();
-    std::cout << "[PORTFOLIO] Data exported to JSON: " << filename << std::endl;
-    return true;
-  }
+  } 
+  
+  
 
   std::cout << "[PORTFOLIO] Unsupported export format: " << format << std::endl;
   return false;

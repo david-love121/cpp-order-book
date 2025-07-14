@@ -14,6 +14,7 @@ public:
         
     uint64_t GetTotalVolume() const { return total_volume_; }
     uint64_t GetPrice() const { return price_; }
+    uint64_t GetOrderCount() const { return order_queue_.size(); }
     Order* GetTopOrder() const {
         if (!order_queue_.empty()) {
             return order_queue_.front();

@@ -11,4 +11,6 @@ struct Trade {
     uint64_t quantity;
     uint64_t ts_received;
     uint64_t ts_executed;
+    bool aggressor_order_closed;
+    bool resting_order_closed;
 };

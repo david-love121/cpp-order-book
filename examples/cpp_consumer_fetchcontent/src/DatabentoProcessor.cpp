@@ -40,7 +40,21 @@ KeepGoing DatabentoProcessor::ProcessMarketData(const Record &rec) {
     }
 }
 
-KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo) {
+bool DatabentoProcessor::ClearOrderFromMapping(uint64_t internal_order_id)
+{
+    uint64_t databento_internal_id = GetDatabentoOrderId(internal_order_id);
+    if (databento_internal_id != 0) {
+        databento_to_internal_order_id_.erase(databento_internal_id);
+        internal_to_databento_order_id_.erase(internal_order_id);
+        return true;
+    } else {
+        return false;
+    }
+
+}
+
+KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo)
+{
     if (!order_client_) {
         return KeepGoing::Continue;
     }
@@ -64,6 +78,7 @@ KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo) {
                 
                 // Add order directly to OrderBook
                 uint64_t internal_order_id = order_client_->SubmitOrder(
+                    mbo.order_id,  // databento_order_id
                     databento_user_id,
                     mbo.side == Side::Bid,
                     mbo.size,
@@ -71,7 +86,14 @@ KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo) {
                     ts_received,
                     ts_received
                 );
-                internal_order_id = MapDatabentoOrderId(mbo.order_id, internal_order_id);
+                
+                // Check if we should create mapping - only for orders that still exist
+                // We can determine this by checking if the internal_order_id is valid
+                if (internal_order_id > 0) {
+                    // For immediately filled orders, don't create a mapping
+                    // This requires OrderBook to return 0 for filled orders or another mechanism
+                    MapDatabentoOrderId(mbo.order_id, internal_order_id);
+                }
                 break;
             }
             case Action::Cancel: {
@@ -94,7 +116,9 @@ KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo) {
                     order_client_->ModifyOrder(
                         internal_order_id,
                         mbo.size,
-                        static_cast<uint64_t>(mbo.price / 1e7) // Convert to ticks
+                        static_cast<uint64_t>(mbo.price / 1e7),
+                        ts_received,
+                        ts_received
                     );
                 } else {
                     std::cout << "[MBO-MODIFY-SKIP] Order " << mbo.order_id << " modify failed: Order ID not found" << std::endl;
@@ -166,10 +190,14 @@ uint64_t DatabentoProcessor::MapDatabentoOrderId(uint64_t databento_order_id, ui
     internal_to_databento_order_id_[internal_order_id] = databento_order_id;
     return internal_order_id;
 }
-
+//TODO: Make it so OrderBook manages internal IDs on its own and stores databento IDs with orders
 uint64_t DatabentoProcessor::GetInternalOrderId(uint64_t databento_order_id) {
     auto it = databento_to_internal_order_id_.find(databento_order_id);
     return (it != databento_to_internal_order_id_.end()) ? it->second : 0;
+}
+uint64_t DatabentoProcessor::GetDatabentoOrderId(uint64_t internal_order_id) {
+    auto it = internal_to_databento_order_id_.find(internal_order_id);
+    return (it != internal_to_databento_order_id_.end()) ? it->second : 0;
 }
 
 
