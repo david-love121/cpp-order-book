@@ -27,7 +27,7 @@ private:
     double momentum_factor_;         // Amplification factor for momentum
     double decay_factor_;           // Decay factor for historical signals
     size_t lookback_window_;        // Number of snapshots to consider
-    uint64_t slippage_delay_ns_;   // Simulated slippage delay for orders (nanoseconds)
+
     // Historical data tracking
     std::deque<double> imbalance_history_;      // Rolling window of imbalances
     std::deque<double> price_history_;          // Rolling window of mid prices
@@ -36,19 +36,16 @@ private:
     // Signal state
     double current_signal_;         // Current signal strength
     double signal_momentum_;        // Signal momentum factor
-    uint64_t last_signal_time_;     // Timestamp of last signal
-    
+
+        
     // Risk management
     double max_signal_strength_;    // Maximum signal strength cap
-    double position_limit_factor_;  // Position limit as factor of base quantity
-    
     // Auto-trading functionality
     std::shared_ptr<IClient> order_client_;  // Client for placing orders
     bool auto_trading_enabled_;     // Enable/disable automatic order placement
     uint64_t last_order_time_;      // Timestamp of last order placed
-    uint64_t min_order_interval_;   // Minimum time between orders (nanoseconds)
     double min_signal_for_trade_;   // Minimum signal strength to place order
-    uint64_t max_orders_per_minute_;// Maximum orders per minute rate limit
+
     std::deque<uint64_t> recent_order_times_; // Track recent order timestamps
 
 public:
@@ -77,11 +74,6 @@ public:
      */
     void Reset() override;
 
-    /**
-     * @brief Initialize strategy with custom parameters
-     * @param parameters Strategy parameters map
-     */
-    void Initialize(const std::unordered_map<std::string, double>& parameters) override;
 
     // Getters for strategy metrics
     double GetCurrentSignal() const { return current_signal_; }
@@ -93,13 +85,13 @@ public:
     void SetMomentumFactor(double factor) { momentum_factor_ = factor; }
     void SetDecayFactor(double factor) { decay_factor_ = factor; }
     void SetLookbackWindow(size_t window);
-    void SetSlippageDelay(uint64_t delay_ns) { slippage_delay_ns_ = delay_ns; }
+
     // Auto-trading configuration
     void SetOrderClient(std::shared_ptr<IClient> client) { order_client_ = client; }
     void EnableAutoTrading(bool enabled = true) { auto_trading_enabled_ = enabled; }
     void SetMinSignalForTrade(double signal) { min_signal_for_trade_ = signal; }
-    void SetMinOrderInterval(uint64_t interval_ns) { min_order_interval_ = interval_ns; }
-    void SetMaxOrdersPerMinute(uint64_t max_orders) { max_orders_per_minute_ = max_orders; }
+
+
     
     // Auto-trading status
     bool IsAutoTradingEnabled() const { return auto_trading_enabled_; }
@@ -135,12 +127,6 @@ private:
      */
     double CalculateSignalStrength(double imbalance) const;
 
-    /**
-     * @brief Apply risk management rules to signal
-     * @param signal Raw signal value
-     * @return Risk-adjusted signal
-     */
-    double ApplyRiskManagement(double signal) const;
 
     /**
      * @brief Check if current market conditions support trading
@@ -155,14 +141,8 @@ private:
      * @param orderbook_snapshot Current order book snapshot
      * @return True if order was placed
      */
-    bool ExecuteAutoTrade(double signal, double slippage_delay_ns, const OrderBookSnapshot& orderbook_snapshot);
+    bool ExecuteAutoTrade(double signal, const OrderBookSnapshot& orderbook_snapshot);
     
-    /**
-     * @brief Check if order placement is allowed (rate limiting)
-     * @param current_time Current timestamp
-     * @return True if order can be placed
-     */
-    bool CanPlaceOrder(uint64_t current_time);
     
     /**
      * @brief Calculate order price based on signal and market conditions

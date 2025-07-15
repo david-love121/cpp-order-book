@@ -125,23 +125,6 @@ public:
         return cache_file.string();
     }
 
-    /**
-     * Clear all cached data
-     */
-    void clearCache() {
-        std::cout << "[CACHE] Clearing cache directory: " << cache_directory_ << std::endl;
-        
-        try {
-            for (const auto& entry : fs::directory_iterator(cache_directory_)) {
-                if (entry.is_regular_file() && entry.path().extension() == ".dbn") {
-                    fs::remove(entry);
-                    std::cout << "[CACHE] Removed: " << entry.path().filename() << std::endl;
-                }
-            }
-        } catch (const fs::filesystem_error& e) {
-            std::cerr << "[CACHE] Error clearing cache: " << e.what() << std::endl;
-        }
-    }
 
     /**
      * List cached files

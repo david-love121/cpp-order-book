@@ -66,6 +66,9 @@ KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo)
     uint64_t ts_received = static_cast<uint64_t>(mbo.ts_recv.time_since_epoch().count());
     last_mbo_timestamp_ = ts_received;
     
+    // Update market state with current symbol and timestamp
+    order_client_->UpdateMarketState(current_symbol_, ts_received);
+    
     try {
         switch (mbo.action) {
             case Action::Add: {
@@ -137,11 +140,18 @@ KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo)
 }
 
 KeepGoing DatabentoProcessor::ProcessTradeMessage(const TradeMsg &trade) {
+    if (!order_client_) {
+        return KeepGoing::Continue;
+    }
+    
     // Convert symbol using instrument ID  
     current_symbol_ = ConvertSymbol(trade.hd.instrument_id);
     
     // Extract and store timestamp
-    // uint64_t ts_received = static_cast<uint64_t>(trade.ts_recv.time_since_epoch().count());
+    uint64_t ts_received = static_cast<uint64_t>(trade.ts_recv.time_since_epoch().count());
+    
+    // Update market state with current symbol and timestamp
+    order_client_->UpdateMarketState(current_symbol_, ts_received);
     
     std::cout << "[TRADE] " << current_symbol_ << " " << trade.size << "@" << (trade.price / 1e9) 
               << " side=" << (trade.side == Side::Bid ? "BUY" : "SELL") << std::endl;
@@ -150,11 +160,18 @@ KeepGoing DatabentoProcessor::ProcessTradeMessage(const TradeMsg &trade) {
 }
 
 KeepGoing DatabentoProcessor::ProcessQuoteMessage(const Mbp1Msg &mbp1) {
+    if (!order_client_) {
+        return KeepGoing::Continue;
+    }
+    
     // Convert symbol using instrument ID
     current_symbol_ = ConvertSymbol(mbp1.hd.instrument_id);
     
     // Extract and store timestamp
-    //uint64_t ts_received = static_cast<uint64_t>(mbp1.ts_recv.time_since_epoch().count());
+    uint64_t ts_received = static_cast<uint64_t>(mbp1.ts_recv.time_since_epoch().count());
+    
+    // Update market state with current symbol and timestamp
+    order_client_->UpdateMarketState(current_symbol_, ts_received);
     
     // Access the first level from the BidAskPair array
     const auto &level = mbp1.levels[0];
@@ -168,14 +185,6 @@ KeepGoing DatabentoProcessor::ProcessQuoteMessage(const Mbp1Msg &mbp1) {
     return KeepGoing::Continue;
 }
 
-void DatabentoProcessor::PrintOrderBookStatus() {
-    std::cout << "\n=== Market Data Status ===" << std::endl;
-    std::cout << "Symbol: " << current_symbol_ << std::endl;
-    std::cout << "Last Timestamp: " << last_mbo_timestamp_ << std::endl;
-    std::cout << "Active Order Mappings: " << databento_to_internal_order_id_.size() << std::endl;
-
-    std::cout << "=========================" << std::endl;
-}
 
 uint64_t DatabentoProcessor::MapDatabentoOrderId(uint64_t databento_order_id, uint64_t internal_order_id) {
     // Check if we already have a mapping
@@ -201,9 +210,7 @@ uint64_t DatabentoProcessor::GetDatabentoOrderId(uint64_t internal_order_id) {
 }
 
 
-std::string DatabentoProcessor::ConvertSymbol(uint32_t instrument_id) {
-    // For now, return a default symbol
-    // In a real implementation, this would use symbol mapping services
-    (void)instrument_id; // Suppress unused parameter warning
+std::string DatabentoProcessor::ConvertSymbol(uint32_t /*instrument_id*/) {
+    // TODO: Implement proper symbol conversion when needed
     return current_symbol_;
 }

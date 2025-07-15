@@ -41,7 +41,6 @@ private:
     uint64_t client_id_;
     std::string client_name_;
     uint64_t tracked_user_id_;
-    uint64_t slippage_delay_ns_;
     std::atomic<bool> running_{false};
     
     // Current market state for orchestration
@@ -51,10 +50,9 @@ private:
 public:
     /**
      * @brief Constructor for OrderBookManager orchestrator
-     * @param slippage_delay_ns Slippage delay for order execution simulation
      * @param tracked_user_id User ID to track in portfolio
      */
-    OrderBookManager(uint64_t slippage_delay_ns = 1000000, uint64_t tracked_user_id = 0);
+    OrderBookManager(uint64_t tracked_user_id = 0);
     
     // ========== IClient Interface Implementation ==========
 
@@ -79,6 +77,8 @@ public:
     void OnOrderFilled(uint64_t order_id) override;
     void OnTopOfBookUpdate(uint64_t best_bid, uint64_t best_ask,
                            uint64_t bid_volume, uint64_t ask_volume) override;
+
+    void UpdateMarketState(const std::string& symbol, uint64_t timestamp) override;
 
     void Initialize() override;
     void InitializeAfterConstruction(); // Called after shared_ptr is fully constructed
@@ -113,11 +113,9 @@ public:
     // Configuration
     uint64_t GetTrackedUserId() const;
     bool IsUserTracked(uint64_t user_id) const;
-    void SetSlippageDelay(uint64_t slippage_delay_ns);
-    uint64_t GetSlippageDelay() const;
-    
-    // Market state management (for DatabentoProcessor)
-    void UpdateMarketState(const std::string& symbol, uint64_t timestamp);
+
+
+
     
     // L3 Order Book data access
     OrderBookSnapshot GetOrderBookSnapshot() const;

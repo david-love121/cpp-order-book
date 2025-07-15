@@ -2,7 +2,6 @@
 #include <cstdint>
 
 struct Trade {
-    uint64_t execution_id;
     uint64_t aggressor_order_id;
     uint64_t resting_order_id;
     uint64_t aggressor_user_id;
@@ -13,4 +12,5 @@ struct Trade {
     uint64_t ts_executed;
     bool aggressor_order_closed;
     bool resting_order_closed;
+    bool aggressor_is_buy;
 };

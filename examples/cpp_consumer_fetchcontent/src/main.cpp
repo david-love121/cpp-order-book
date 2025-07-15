@@ -179,8 +179,7 @@ void runHistoricalDataDemo() {
         
         // Initialize with 2ms slippage for historical data simulation, tracking user 1000
         uint64_t tracked_user_id = 1000;
-        uint64_t slippage_delay_ns_ = 2000000; // 2ms
-        auto manager = std::make_shared<OrderBookManager>(slippage_delay_ns_, tracked_user_id);  // 2ms slippage delay, user 1000
+        auto manager = std::make_shared<OrderBookManager>(tracked_user_id);  // 2ms slippage delay, user 1000
 
         // Create and configure Databento processor
    

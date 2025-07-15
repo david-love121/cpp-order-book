@@ -14,7 +14,7 @@
 // Forward declarations
 struct Trade;
 class IStrategy;
-class StrategyManager;
+
 
 struct TrackedOrder {
   uint64_t order_id;
@@ -98,13 +98,13 @@ public:
   void DisableCSV();
 
   // Strategy integration
-  void SetStrategyManager(std::shared_ptr<StrategyManager> strategy_mgr);
+
   void SetUserStrategy(std::shared_ptr<IStrategy> strategy);
 
   // Utility methods
   void PrintPortfolioSummary() const;
   void Reset();
-
+  
   // Risk and performance methods
   RiskMetrics CalculateRiskMetrics() const;
   bool ExportData(const std::string &format, const std::string &filename) const;

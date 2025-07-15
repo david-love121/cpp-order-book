@@ -3,7 +3,6 @@
 #include <stdexcept>
 #include "Trade.h"
 #include <algorithm>
-#include "Helpers.h"
 void PriceLevel::AddOrder(Order* order) {
     // Check for null pointer
     if (!order) {
@@ -56,7 +55,6 @@ std::vector<Trade> PriceLevel::FillOrder(Order* order, uint64_t quantity) {
         bool top_order_closed = (top_order->quantity == fill_quantity);
         bool aggressor_order_closed = (remaining_quantity == fill_quantity);
         Trade trade{
-            Helpers::GenerateExecutionId(), // execution_id
             order->order_id, // aggressor_order_id
             top_order->order_id, // resting_order_id
             order->user_id, // aggressor_user_id
@@ -66,7 +64,8 @@ std::vector<Trade> PriceLevel::FillOrder(Order* order, uint64_t quantity) {
             order->ts_received, // ts_received (from aggressor order)
             order->ts_executed,  // ts_executed (from aggressor order - should be historical timestamp)
             aggressor_order_closed,
-            top_order_closed
+            top_order_closed,
+            order->is_buy_side // aggressor_is_buy
 
         };
         trades.push_back(trade);

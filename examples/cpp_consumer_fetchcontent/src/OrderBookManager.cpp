@@ -5,16 +5,49 @@
 #include "OrderImbalanceStrategy.h"
 #include <iostream>
 
-OrderBookManager::OrderBookManager(uint64_t slippage_delay_ns, uint64_t tracked_user_id)
-    : client_id_(1), client_name_("OrderBookManager"), tracked_user_id_(tracked_user_id), slippage_delay_ns_(slippage_delay_ns)
+OrderBookManager::OrderBookManager(uint64_t tracked_user_id)
+    : client_id_(1), client_name_("OrderBookManager"), tracked_user_id_(tracked_user_id)
 {
     // Initialize owned components
     order_book_ = std::make_shared<OrderBook>();
     portfolio_manager_ = std::make_shared<PortfolioManager>("portfolio_" + std::to_string(tracked_user_id_) + ".csv");
     tob_tracker_ = std::make_shared<TopOfBookTracker>();
-    
-    
-    // Don't register here - will be done in Initialize()
+    tob_tracker_->EnableCSV("tob_" + std::to_string(tracked_user_id_) + ".csv");
+    //Registration of shared pointers back to this IClient are initialized after construction
+}
+
+void OrderBookManager::InitializeAfterConstruction() {
+    // Register ourselves as a client of the order book now that shared_ptr is available
+    if (order_book_) {
+        try {
+            order_book_->RegisterClient(shared_from_this());     
+            std::cout << "[OrderBookManager] Successfully registered as order book client" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "[OrderBookManager] Error registering as client: " << e.what() << std::endl;
+        }
+    }
+    auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
+                "Historical_OrderImbalance",
+                tracked_user_id_,
+                0.10,  // 10% imbalance threshold for real market data
+                30     // 30-snapshot lookback window for more data
+            );
+
+        // Configure strategy parameters for historical analysis
+   
+    order_imbalance_strategy->SetSignalThreshold(0.20);  // 20% signal threshold - more selective
+    order_imbalance_strategy->SetBaseQuantity(1);        // 1 contract for safer trading
+    order_imbalance_strategy->SetMomentumFactor(1.2);    // Conservative momentum
+    order_imbalance_strategy->SetDecayFactor(0.98);      // Slower decay for analysis
+    order_imbalance_strategy->SetRiskMultiplier(0.5);    // 50% risk multiplier for safer sizing
+    order_imbalance_strategy->SetMaxPosition(15);         // Maximum 5 contract position
+        // Enable auto-trading with appropriate settings
+    order_imbalance_strategy->EnableAutoTrading(true);   // Enable auto-trading
+    order_imbalance_strategy->SetMinSignalForTrade(0.5); // 25% minimum signal for trading - very selective
+    order_imbalance_strategy->SetPortfolioManager(portfolio_manager_);
+    order_imbalance_strategy->SetOrderClient(shared_from_this());
+
+    SetStrategy(order_imbalance_strategy);
 }
 
 OrderBookSnapshot OrderBookManager::GetOrderBookSnapshot() const {
@@ -105,6 +138,7 @@ uint64_t OrderBookManager::GetMidPrice() const {
 void OrderBookManager::OnTradeExecuted(const Trade &trade) {
     // Route to portfolio manager
     RouteToPortfolio(trade);
+
     if (trade.aggressor_order_closed) {
         data_processor_->ClearOrderFromMapping(trade.aggressor_order_id);
     }
@@ -161,41 +195,6 @@ void OrderBookManager::Initialize() {
     // The shared_ptr registration will be done in InitializeAfterConstruction()
 }
 
-void OrderBookManager::InitializeAfterConstruction() {
-    // Register ourselves as a client of the order book now that shared_ptr is available
-    if (order_book_) {
-        try {
-            order_book_->RegisterClient(shared_from_this());     
-            std::cout << "[OrderBookManager] Successfully registered as order book client" << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "[OrderBookManager] Error registering as client: " << e.what() << std::endl;
-        }
-    }
-    auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
-                "Historical_OrderImbalance",
-                tracked_user_id_,
-                0.10,  // 10% imbalance threshold for real market data
-                30     // 30-snapshot lookback window for more data
-            );
-
-        // Configure strategy parameters for historical analysis
-    order_imbalance_strategy->SetSignalThreshold(0.05);  // 5% signal threshold
-    order_imbalance_strategy->SetBaseQuantity(5);        // 5 contracts for trading
-    order_imbalance_strategy->SetMomentumFactor(1.2);    // Conservative momentum
-    order_imbalance_strategy->SetDecayFactor(0.98);      // Slower decay for analysis
-    order_imbalance_strategy->SetSlippageDelay(slippage_delay_ns_); // 2ms slippage to match manager
-        // Enable auto-trading with appropriate settings
-        
-    order_imbalance_strategy->EnableAutoTrading(true);   // Enable auto-trading
-    order_imbalance_strategy->SetMinSignalForTrade(0.05); // 5% minimum signal for trading
-    order_imbalance_strategy->SetMinOrderInterval(1000000000); // 1 second between orders
-    order_imbalance_strategy->SetMaxOrdersPerMinute(10); // Max 10 orders per minute
-
-    order_imbalance_strategy->SetPortfolioManager(portfolio_manager_);
-    order_imbalance_strategy->SetOrderClient(shared_from_this());
-    SetStrategy(order_imbalance_strategy);
-    
-}
 
 void OrderBookManager::Shutdown() {
     running_ = false;
@@ -271,13 +270,7 @@ bool OrderBookManager::IsUserTracked(uint64_t user_id) const {
     return user_id == tracked_user_id_;
 }
 
-void OrderBookManager::SetSlippageDelay(uint64_t slippage_delay_ns) {
-    slippage_delay_ns_ = slippage_delay_ns;
-}
 
-uint64_t OrderBookManager::GetSlippageDelay() const {
-    return slippage_delay_ns_;
-}
 
 // Market state management
 
@@ -315,6 +308,7 @@ void OrderBookManager::RouteToPortfolio(const Trade& trade) {
         portfolio_manager_->OnTradeExecuted(trade);
     }
 }
+
 
 
 void OrderBookManager::RouteToTopOfBookTracker(uint64_t best_bid, uint64_t best_ask,

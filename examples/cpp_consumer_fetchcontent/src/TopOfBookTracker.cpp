@@ -138,9 +138,11 @@ void TopOfBookTracker::WriteSnapshotToCSV(const TOBSnapshot& snapshot) {
 void TopOfBookTracker::OnTopOfBookUpdate(uint64_t timestamp, const std::string& symbol, 
                                         uint64_t best_bid, uint64_t best_ask, 
                                         uint64_t bid_volume, uint64_t ask_volume) {
+    // For historical data processing, don't fall back to current time
+    // If timestamp is 0, skip this update or log a warning
     if (timestamp == 0) {
-        timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        std::cerr << "[TOB] Warning: Received update with timestamp=0, skipping" << std::endl;
+        return;
     }
     
     // Convert prices from ticks to dollars (divide by 100)

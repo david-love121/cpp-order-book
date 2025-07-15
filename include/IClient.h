@@ -96,6 +96,7 @@ public:
      */
     virtual uint64_t GetSpread() const = 0;
 
+
     // ========== Event Callbacks ==========
 
     /**
@@ -171,6 +172,13 @@ public:
      */
     virtual void OnTopOfBookUpdate(uint64_t best_bid, uint64_t best_ask, 
                                    uint64_t bid_volume, uint64_t ask_volume) = 0;
+
+    /**
+     * @brief Update market state with current symbol and timestamp
+     * @param symbol Current trading symbol
+     * @param timestamp Current market timestamp
+     */
+    virtual void UpdateMarketState(const std::string& symbol, uint64_t timestamp) = 0;
 
     // ========== Client Lifecycle ==========
 

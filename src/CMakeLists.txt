@@ -4,7 +4,6 @@
 set(ORDERBOOK_SOURCES
     OrderBook.cpp
     PriceLevel.cpp
-    Helpers.cpp
 )
 
 # Create the OrderBook library

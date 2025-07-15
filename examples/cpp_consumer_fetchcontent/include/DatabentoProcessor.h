@@ -38,16 +38,10 @@ private:
     std::shared_ptr<IClient> order_client_;   
 
     
-    // Symbol mapping for Databento instrument IDs
-    PitSymbolMap symbol_mappings_;
-    
-    // Track last prices for market making
-    std::unordered_map<std::string, uint64_t> last_price_by_symbol_;
     
     // Order ID mapping between Databento and internal IDs
     std::unordered_map<uint64_t, uint64_t> databento_to_internal_order_id_;
     std::unordered_map<uint64_t, uint64_t> internal_to_databento_order_id_;
-    std::atomic<uint64_t> next_internal_order_id_{1000000};
     
     uint64_t last_mbo_timestamp_ = 0;
     std::string current_symbol_;
@@ -83,7 +77,6 @@ private:
     uint64_t MapDatabentoOrderId(uint64_t databento_order_id, uint64_t internal_order_id);
     uint64_t GetInternalOrderId(uint64_t databento_order_id);
     uint64_t GetDatabentoOrderId(uint64_t internal_order_id);
-    uint64_t GenerateInternalOrderId();
     
     // Symbol conversion helpers
     std::string ConvertSymbol(uint32_t instrument_id);

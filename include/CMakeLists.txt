@@ -6,7 +6,6 @@ set(ORDERBOOK_HEADERS
     PriceLevel.h
     Order.h
     Trade.h
-    Helpers.h
     IClient.h
 )
 

@@ -83,12 +83,36 @@ void PortfolioManager::OnTradeExecuted(const Trade &trade) {
     if (it != tracked_orders_.end()) {
       it->second.remaining_quantity -= trade.quantity;
     }
+    if (trade.aggressor_is_buy) {
+      // Aggressor is buying: increase position
+      running_position_ += static_cast<int64_t>(trade.quantity);
+      // Decrease cash flow (buying costs money)
+      realized_pnl_ -= static_cast<double>(trade.quantity) * static_cast<double>(trade.price);
+
+    } else {
+      // Aggressor is selling: decrease position
+      running_position_ -= static_cast<int64_t>(trade.quantity);
+      // Increase cash flow (selling brings in money)
+      realized_pnl_ += static_cast<double>(trade.quantity) * static_cast<double>(trade.price);
+    }
   }
 
   if (resting_tracked) {
     auto it = tracked_orders_.find(trade.resting_order_id);
     if (it != tracked_orders_.end()) {
       it->second.remaining_quantity -= trade.quantity;
+    }
+    if (!trade.aggressor_is_buy) {
+      // Resting order is buying: increase position
+      running_position_ += static_cast<int64_t>(trade.quantity);
+      // Decrease cash flow (buying costs money)
+      realized_pnl_ -= static_cast<double>(trade.quantity) * static_cast<double>(trade.price);
+
+    } else {
+      // Resting order is selling: decrease position
+      running_position_ -= static_cast<int64_t>(trade.quantity);
+      // Increase cash flow (selling brings in money)
+      realized_pnl_ += static_cast<double>(trade.quantity) * static_cast<double>(trade.price);
     }
   }
 
@@ -243,15 +267,13 @@ void PortfolioManager::EnableCSV(const std::string &filename) {
       csv_file_ << "#   realized_pnl: Cumulative realized P&L from closed "
                    "trades in dollars\n";
       csv_file_
-          << "#   total_pnl: Total P&L (realized + unrealized) in dollars\n";
+                << "#   total_pnl: Total P&L (realized + unrealized) in dollars\n";
       csv_file_ << "#   total_trades: Number of trade executions involving "
-                   "tracked orders\n";
-      csv_file_ << "#   total_cost_basis: Total cost basis for current "
-                   "position in dollars\n";
+                <<  "tracked orders\n";
+
       csv_file_ << "#   position_value: Current market value of position in "
-                   "dollars\n";
-      csv_file_
-          << "#   return_on_equity: Total P&L as decimal (e.g., 0.15 = 15%)\n";
+                <<   "dollars\n";
+
       csv_file_ << "\n";
 
       WriteCSVHeader();
@@ -280,8 +302,7 @@ void PortfolioManager::WriteCSVHeader() {
   }
 
   csv_file_ << "timestamp,position,current_price,average_cost,unrealized_pnl,"
-               "realized_pnl,total_pnl,total_trades,total_cost_basis,"
-               "position_value,return_on_equity\n";
+               "realized_pnl,total_pnl,total_trades,position_value\n";
   csv_file_.flush();
 }
 
@@ -362,7 +383,9 @@ double PortfolioManager::CalculateCost() const {
     return 0.0;
   }
 
-  return total_cost / static_cast<double>(std::abs(total_position));
+  // For cost basis calculation, we want the average price (always positive)
+  // regardless of direction, since cost basis represents the price level
+  return std::abs(total_cost) / static_cast<double>(std::abs(total_position));
 }
 
 double PortfolioManager::GetTotalCostBasis() const {
@@ -372,15 +395,23 @@ double PortfolioManager::GetTotalCostBasis() const {
 
   double total_cost_basis = 0.0;
 
-  // Sum up the cost basis from all executed orders
+  // Sum up the net cost basis from all executed orders
+  // For buys: add cost (cash outflow)
+  // For sells: subtract proceeds (cash inflow)
   for (const auto& [order_id, order] : tracked_orders_) {
     uint64_t executed_quantity = order.quantity - order.remaining_quantity;
     if (executed_quantity > 0) {
-      total_cost_basis += static_cast<double>(executed_quantity * order.price);
+      double order_value = static_cast<double>(executed_quantity * order.price);
+      if (order.is_buy) {
+        total_cost_basis += order_value;  // Cash spent on purchases
+      } else {
+        total_cost_basis -= order_value;  // Cash received from sales
+      }
     }
   }
 
-  return total_cost_basis;
+  // Return absolute value since cost basis represents total investment magnitude
+  return std::abs(total_cost_basis);
 }
 
 double PortfolioManager::GetReturnOnEquity() const {

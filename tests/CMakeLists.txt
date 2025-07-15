@@ -24,7 +24,6 @@ add_executable(orderbook_tests
     test_main.cpp
     test_order_book.cpp
     test_price_level.cpp
-    test_helpers.cpp
     test_integration.cpp
 )
 

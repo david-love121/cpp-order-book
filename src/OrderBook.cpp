@@ -2,7 +2,6 @@
 #include "Order.h"
 #include "PriceLevel.h"
 #include "Trade.h"
-#include "Helpers.h"
 #include "IClient.h"
 #include <iostream>
 #include <chrono>

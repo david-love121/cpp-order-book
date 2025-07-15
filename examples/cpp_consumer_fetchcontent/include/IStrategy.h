@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-
+#include "Trade.h"
 // Forward declarations
 struct TOBSnapshot;
 class PortfolioManager;
@@ -123,11 +123,7 @@ public:
    */
   virtual StrategyAction ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot) = 0;
 
-  /**
-   * @brief Initialize strategy with parameters
-   * @param parameters Strategy-specific parameters
-   */
-  virtual void Initialize(const std::unordered_map<std::string, double> &parameters) = 0;
+
 
   /**
    * @brief Reset strategy state
@@ -146,11 +142,14 @@ public:
    */
   virtual void SetPortfolioManager(std::shared_ptr<PortfolioManager> portfolio_mgr) = 0;
 
+
+
   // Getters
   virtual const std::string &GetName() const = 0;
   virtual uint64_t GetUserId() const = 0;
   virtual bool IsEnabled() const = 0;
   virtual std::shared_ptr<PortfolioManager> GetPortfolioManager() const = 0;
+  
 };
 
 /**
@@ -167,7 +166,9 @@ protected:
   double signal_threshold_;
   uint64_t base_quantity_;
   std::shared_ptr<PortfolioManager> portfolio_manager_;
-  std::unordered_map<std::string, double> parameters_;
+  double risk_multiplier_;
+  uint64_t max_position_;
+
 
 
 public:
@@ -184,24 +185,26 @@ public:
   virtual StrategyAction ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot) = 0;
 
   // Interface implementations
-  virtual void Initialize(const std::unordered_map<std::string, double> &parameters) override;
   virtual void Reset() override;
   virtual void SetEnabled(bool enabled) override;
   virtual void SetPortfolioManager(std::shared_ptr<PortfolioManager> portfolio_mgr) override;
 
-  // Getters
+
+  // Getters Setters
   virtual const std::string &GetName() const override;
   virtual uint64_t GetUserId() const override;
   virtual bool IsEnabled() const override;
   virtual std::shared_ptr<PortfolioManager> GetPortfolioManager() const override;
 
-  // Additional helper methods for derived classes
-  void SetParameter(const std::string &key, double value);
-  double GetParameter(const std::string &key, double default_value = 0.0) const;
+
   void SetSignalThreshold(double threshold);
   double GetSignalThreshold() const;
   void SetBaseQuantity(uint64_t quantity);
   uint64_t GetBaseQuantity() const;
+  void SetRiskMultiplier(double multiplier);
+  double GetRiskMultiplier() const;
+  void SetMaxPosition(uint64_t max_pos);
+  uint64_t GetMaxPosition() const;
 
 protected:
   /**
@@ -210,55 +213,4 @@ protected:
    * @return Strategy action
    */
   virtual StrategyAction SignalToAction(double signal_value);
-};
-
-/**
- * @brief Strategy manager for handling multiple strategies per user
- */
-class StrategyManager {
-private:
-  std::unordered_map<uint64_t, std::shared_ptr<IStrategy>> user_strategies_;
-  std::vector<std::shared_ptr<IStrategy>> all_strategies_;
-
-public:
-  /**
-   * @brief Add strategy for a user
-   * @param user_id User ID
-   * @param strategy Strategy to add
-   */
-  void AddStrategy(uint64_t user_id, std::shared_ptr<IStrategy> strategy);
-
-  /**
-   * @brief Remove strategy for a user
-   * @param user_id User ID
-   */
-  void RemoveStrategy(uint64_t user_id);
-
-  /**
-   * @brief Get strategy for a user
-   * @param user_id User ID
-   * @return Strategy pointer or nullptr if not found
-   */
-  std::shared_ptr<IStrategy> GetStrategy(uint64_t user_id) const;
-
-  /**
-   * @brief Process order book data for all strategies
-   * @param orderbook_snapshot Order book snapshot with L3 data
-   * @return Vector of strategy actions from all active strategies
-   */
-  std::vector<std::pair<uint64_t, StrategyAction>>
-  ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot);
-
-  /**
-   * @brief Get all strategies
-   * @return Vector of all strategies
-   */
-  const std::vector<std::shared_ptr<IStrategy>> &GetAllStrategies() const {
-    return all_strategies_;
-  }
-
-  /**
-   * @brief Clear all strategies
-   */
-  void Clear();
 };
