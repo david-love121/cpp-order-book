@@ -187,6 +187,15 @@ if ! make -j"$JOBS" $MAKE_ARGS; then
     exit 1
 fi
 
+# Build the cpp_consumer_fetchcontent example
+print_status "Building cpp_consumer_fetchcontent example..."
+cd "$PROJECT_ROOT/examples/cpp_consumer_fetchcontent"
+mkdir -p build
+cd build
+cmake ..
+make -j"$JOBS"
+cd "$PROJECT_ROOT"
+
 BUILD_END_TIME=$(date +%s)
 BUILD_DURATION=$((BUILD_END_TIME - BUILD_START_TIME))
 

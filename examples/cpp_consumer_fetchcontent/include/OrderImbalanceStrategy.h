@@ -33,6 +33,7 @@ private:
     std::deque<double> price_history_;          // Rolling window of mid prices
     std::deque<uint64_t> volume_history_;       // Rolling window of total volumes
     
+    
     // Signal state
     double current_signal_;         // Current signal strength
     double signal_momentum_;        // Signal momentum factor
@@ -40,11 +41,12 @@ private:
         
     // Risk management
     double max_signal_strength_;    // Maximum signal strength cap
+    double trade_volume_imbalance_; // Imbalance of trade volume
     // Auto-trading functionality
     std::shared_ptr<IClient> order_client_;  // Client for placing orders
     bool auto_trading_enabled_;     // Enable/disable automatic order placement
     uint64_t last_order_time_;      // Timestamp of last order placed
-    double min_signal_for_trade_;   // Minimum signal strength to place order
+
 
     std::deque<uint64_t> recent_order_times_; // Track recent order timestamps
 
@@ -70,6 +72,12 @@ public:
     StrategyAction ProcessOrderBookData(const OrderBookSnapshot& orderbook_snapshot) override;
 
     /**
+     * @brief Process trade data and update strategy state
+     * @param trade Trade data
+     */
+    void ProcessTradeData(const Trade& trade) override;
+
+    /**
      * @brief Reset strategy state and clear history
      */
     void Reset() override;
@@ -89,7 +97,7 @@ public:
     // Auto-trading configuration
     void SetOrderClient(std::shared_ptr<IClient> client) { order_client_ = client; }
     void EnableAutoTrading(bool enabled = true) { auto_trading_enabled_ = enabled; }
-    void SetMinSignalForTrade(double signal) { min_signal_for_trade_ = signal; }
+
 
 
     

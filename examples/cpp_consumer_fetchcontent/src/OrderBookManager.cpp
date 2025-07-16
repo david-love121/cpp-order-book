@@ -26,28 +26,7 @@ void OrderBookManager::InitializeAfterConstruction() {
             std::cerr << "[OrderBookManager] Error registering as client: " << e.what() << std::endl;
         }
     }
-    auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
-                "Historical_OrderImbalance",
-                tracked_user_id_,
-                0.10,  // 10% imbalance threshold for real market data
-                30     // 30-snapshot lookback window for more data
-            );
-
-        // Configure strategy parameters for historical analysis
-   
-    order_imbalance_strategy->SetSignalThreshold(0.20);  // 20% signal threshold - more selective
-    order_imbalance_strategy->SetBaseQuantity(1);        // 1 contract for safer trading
-    order_imbalance_strategy->SetMomentumFactor(1.2);    // Conservative momentum
-    order_imbalance_strategy->SetDecayFactor(0.98);      // Slower decay for analysis
-    order_imbalance_strategy->SetRiskMultiplier(0.5);    // 50% risk multiplier for safer sizing
-    order_imbalance_strategy->SetMaxPosition(15);         // Maximum 5 contract position
-        // Enable auto-trading with appropriate settings
-    order_imbalance_strategy->EnableAutoTrading(true);   // Enable auto-trading
-    order_imbalance_strategy->SetMinSignalForTrade(0.5); // 25% minimum signal for trading - very selective
-    order_imbalance_strategy->SetPortfolioManager(portfolio_manager_);
-    order_imbalance_strategy->SetOrderClient(shared_from_this());
-
-    SetStrategy(order_imbalance_strategy);
+    
 }
 
 OrderBookSnapshot OrderBookManager::GetOrderBookSnapshot() const {
@@ -138,6 +117,10 @@ uint64_t OrderBookManager::GetMidPrice() const {
 void OrderBookManager::OnTradeExecuted(const Trade &trade) {
     // Route to portfolio manager
     RouteToPortfolio(trade);
+
+    if (strategy_) {
+        strategy_->ProcessTradeData(trade);
+    }
 
     if (trade.aggressor_order_closed) {
         data_processor_->ClearOrderFromMapping(trade.aggressor_order_id);
@@ -302,10 +285,10 @@ std::shared_ptr<DatabentoProcessor> OrderBookManager::GetDataProcessor() const {
 
 void OrderBookManager::RouteToPortfolio(const Trade& trade) {
     if (portfolio_manager_ && IsUserTracked(trade.aggressor_user_id)) {
-        portfolio_manager_->OnTradeExecuted(trade);
+        portfolio_manager_->OnTrade(trade);
     }
     if (portfolio_manager_ && IsUserTracked(trade.resting_user_id)) {
-        portfolio_manager_->OnTradeExecuted(trade);
+        portfolio_manager_->OnTrade(trade);
     }
 }
 

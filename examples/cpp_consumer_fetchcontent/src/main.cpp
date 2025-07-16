@@ -145,7 +145,10 @@ void runLiveDataDemo() {
     }
 }
 
-void runHistoricalDataDemo() {
+void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
+                           double momentum_factor, double decay_factor,
+                           double min_signal_for_trade, double stop_loss,
+                           double max_daily_loss) {
     std::cout << "\n=== Historical MBO Data Demo for ES Futures ===" << std::endl;
     
     // Check if API key is available
@@ -197,8 +200,28 @@ void runHistoricalDataDemo() {
         
         // Set up OrderImbalanceStrategy for historical data analysis
         std::cout << "\n=== Setting up OrderImbalanceStrategy for Historical Analysis ===" << std::endl;
-        auto client = manager->GetClient();
+        auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
+            "Historical_OrderImbalance",
+            tracked_user_id,
+            imbalance_threshold,
+            lookback_window
+        );
 
+        // Configure strategy parameters for historical analysis
+        order_imbalance_strategy->SetMomentumFactor(momentum_factor);
+        order_imbalance_strategy->SetDecayFactor(decay_factor);
+
+        order_imbalance_strategy->EnableAutoTrading(true);
+        order_imbalance_strategy->SetPortfolioManager(manager->GetPortfolioManager());
+        order_imbalance_strategy->SetOrderClient(manager->GetClient());
+        order_imbalance_strategy->SetSignalThreshold(min_signal_for_trade);  // Lower threshold for sensitivity
+        order_imbalance_strategy->SetBaseQuantity(2);       // Moderate base quantity
+        order_imbalance_strategy->SetMaxPosition(20);       // Limit max position size
+        // Set risk management parameters
+        manager->GetPortfolioManager()->SetStopLoss(stop_loss);
+        manager->GetPortfolioManager()->SetMaxDailyLoss(max_daily_loss);
+
+        manager->SetStrategy(order_imbalance_strategy);
         
         std::cout << "OrderBookManager and DatabentoProcessor started successfully" << std::endl;
         
@@ -335,7 +358,52 @@ void runHistoricalDataDemo() {
     }
 }
 
-int main() {
+void printHelp() {
+    std::cout << "Usage: cpp_consumer_fetchcontent [options]\n"
+              << "Options:\n"
+              << "  --imbalance-threshold <value>  Set the imbalance threshold (default: 0.1)\n"
+              << "  --lookback-window <value>      Set the lookback window (default: 30)\n"
+              << "  --momentum-factor <value>      Set the momentum factor (default: 1.2)\n"
+              << "  --decay-factor <value>         Set the decay factor (default: 0.98)\n"
+              << "  --min-signal-for-trade <value> Set the minimum signal for a trade (default: 0.5)\n"
+              << "  --stop-loss <value>            Set the stop-loss percentage (default: 0.02)\n"
+              << "  --max-daily-loss <value>       Set the maximum daily loss (default: 1000.0)\n"
+              << "  --help                         Show this help message\n";
+}
+
+int main(int argc, char* argv[]) {
+    // Default parameters
+    double imbalance_threshold = 0.1;
+    size_t lookback_window = 30;
+    double momentum_factor = 1.1;
+    double decay_factor = 0.98;
+    double min_signal_for_trade = 0.3;
+    double stop_loss = 0.05;
+    double max_daily_loss = 1000.0;
+
+    // Parse command-line arguments
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help") {
+            printHelp();
+            return 0;
+        } else if (arg == "--imbalance-threshold" && i + 1 < argc) {
+            imbalance_threshold = std::stod(argv[++i]);
+        } else if (arg == "--lookback-window" && i + 1 < argc) {
+            lookback_window = std::stoi(argv[++i]);
+        } else if (arg == "--momentum-factor" && i + 1 < argc) {
+            momentum_factor = std::stod(argv[++i]);
+        } else if (arg == "--decay-factor" && i + 1 < argc) {
+            decay_factor = std::stod(argv[++i]);
+        } else if (arg == "--min-signal-for-trade" && i + 1 < argc) {
+            min_signal_for_trade = std::stod(argv[++i]);
+        } else if (arg == "--stop-loss" && i + 1 < argc) {
+            stop_loss = std::stod(argv[++i]);
+        } else if (arg == "--max-daily-loss" && i + 1 < argc) {
+            max_daily_loss = std::stod(argv[++i]);
+        }
+    }
+
     std::cout << "OrderBook + Databento MBO Integration Demo" << std::endl;
     std::cout << "=========================================" << std::endl;
     std::cout << "This example demonstrates:" << std::endl;
@@ -358,7 +426,9 @@ int main() {
     
     
     // Try to run historical demo - will use cached data if no API key
-    runHistoricalDataDemo();
+    runHistoricalDataDemo(imbalance_threshold, lookback_window, momentum_factor,
+                          decay_factor, min_signal_for_trade, stop_loss,
+                          max_daily_loss);
     
     return 0;
 }

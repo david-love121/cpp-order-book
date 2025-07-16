@@ -18,14 +18,15 @@ OrderImbalanceStrategy::OrderImbalanceStrategy(const std::string& name,
     , current_signal_(0.0)
     , signal_momentum_(0.0)
     , max_signal_strength_(1.0)
+    , trade_volume_imbalance_(0.0)
     , order_client_(nullptr)
     , auto_trading_enabled_(false)
-    , last_order_time_(0)
-    , min_signal_for_trade_(0.15)      // 15% minimum signal to trade
+    , last_order_time_(0)   // 15% minimum signal to trade
 {  
     // Set reasonable defaults for high-frequency trading
     SetSignalThreshold(0.05);  // Lower threshold for HFT
-    SetBaseQuantity(10);       // Moderate base quantity
+    SetBaseQuantity(1);       // Moderate base quantity
+    SetMaxPosition(10);
     
     std::cout << "[STRATEGY] OrderImbalanceStrategy '" << name 
               << "' initialized for user " << user_id 
@@ -44,7 +45,7 @@ StrategyAction OrderImbalanceStrategy::ProcessOrderBookData(const OrderBookSnaps
                   << ", enabled=" << IsEnabled() << std::endl;
     }
     
-    if (!IsEnabled()) {
+    if (!IsEnabled() || (portfolio_manager_ && portfolio_manager_->IsStrategyDisabled())) {
         return StrategyAction(StrategySignal::NONE, 0, 0.0);
     }
     
@@ -65,7 +66,7 @@ StrategyAction OrderImbalanceStrategy::ProcessOrderBookData(const OrderBookSnaps
     //double density_signal = CalculatePriceLevelDensity(orderbook_snapshot);
     
     // Combine multiple L3 signals with different weights
-    double combined_signal = 0.8 * l3_imbalance + 0.2 * weighted_imbalance; 
+    double combined_signal = 0.7 * l3_imbalance + 0.2 * weighted_imbalance + 0.1 * trade_volume_imbalance_;
                            
     
     // Update historical data using order book snapshot
@@ -83,7 +84,7 @@ StrategyAction OrderImbalanceStrategy::ProcessOrderBookData(const OrderBookSnaps
     bool order_placed = false;
     if (auto_trading_enabled_ && action.signal != StrategySignal::NONE && action.signal != StrategySignal::HOLD) {
         order_placed = ExecuteAutoTrade(final_signal, orderbook_snapshot);
-    } 
+    }
     
 
     
@@ -114,6 +115,7 @@ void OrderImbalanceStrategy::Reset() {
     volume_history_.clear();
     current_signal_ = 0.0;
     signal_momentum_ = 0.0;
+    trade_volume_imbalance_ = 0.0;
 
     
     // Reset auto-trading state
@@ -265,38 +267,34 @@ uint64_t OrderImbalanceStrategy::CalculateOrderPrice(double signal, const OrderB
     if (orderbook_snapshot.GetBestBid() <= 0.0 || orderbook_snapshot.GetBestAsk() <= 0.0) {
         return 0;
     }
-    
-    // Convert prices to ticks (assuming 0.01 tick size, multiply by 100)
+
     uint64_t bid_ticks = static_cast<uint64_t>(orderbook_snapshot.GetBestBid() * 100.0);
     uint64_t ask_ticks = static_cast<uint64_t>(orderbook_snapshot.GetBestAsk() * 100.0);
-    
-    // Signal strength determines aggressiveness
+    uint64_t spread_ticks = ask_ticks - bid_ticks;
+
     double signal_strength = std::abs(signal);
-    
-    if (is_buy) {
-        // For buy orders: start at bid, move toward ask based on signal strength
-        // Strong signals (>0.5) will cross the spread
-        if (signal_strength > 0.35) {
-            // Aggressive - hit the ask
-            return ask_ticks;
-        } else if (signal_strength > 0.2) {
-            // Semi-aggressive - between bid and ask
-            return bid_ticks + static_cast<uint64_t>((ask_ticks - bid_ticks) * signal_strength);
+
+    // Wide spread: be more passive
+    if (spread_ticks > 2) {
+        if (is_buy) {
+            return bid_ticks + 1;
         } else {
-            // Passive - at or slightly above bid
-            return bid_ticks + 1; // One tick above bid
+            return ask_ticks - 1;
+        }
+    }
+
+    // Narrow spread: be more aggressive
+    if (is_buy) {
+        if (signal_strength > 0.5) {
+            return ask_ticks;
+        } else {
+            return bid_ticks + static_cast<uint64_t>((ask_ticks - bid_ticks) * signal_strength);
         }
     } else {
-        // For sell orders: start at ask, move toward bid based on signal strength
-        if (signal_strength > 0.35) {
-            // Aggressive - hit the bid
+        if (signal_strength > 0.5) {
             return bid_ticks;
-        } else if (signal_strength > 0.2) {
-            // Semi-aggressive - between bid and ask
-            return ask_ticks - static_cast<uint64_t>((ask_ticks - bid_ticks) * signal_strength);
         } else {
-            // Passive - at or slightly below ask
-            return ask_ticks - 1; // One tick below ask
+            return ask_ticks - static_cast<uint64_t>((ask_ticks - bid_ticks) * signal_strength);
         }
     }
 }
@@ -430,4 +428,15 @@ void OrderImbalanceStrategy::UpdateHistoryFromOrderBook(const OrderBookSnapshot&
     if (volume_history_.size() > lookback_window_) {
         volume_history_.pop_front();
     }
+}
+
+void OrderImbalanceStrategy::ProcessTradeData(const Trade& trade) {
+    if (trade.aggressor_is_buy) {
+        trade_volume_imbalance_ += static_cast<double>(trade.quantity);
+    } else {
+        trade_volume_imbalance_ -= static_cast<double>(trade.quantity);
+    }
+
+    // Decay the trade volume imbalance over time
+    trade_volume_imbalance_ *= decay_factor_;
 }

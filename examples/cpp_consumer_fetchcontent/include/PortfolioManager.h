@@ -83,7 +83,7 @@ public:
   void OnOrderCancelled(uint64_t order_id);
   void OnOrderModified(uint64_t order_id, uint64_t new_quantity,
                        uint64_t new_price);
-  void OnTradeExecuted(const Trade &trade);
+  void OnTrade(const Trade &trade);
 
   // Market data methods
   void UpdateMarketPrice(double price, uint64_t timestamp = 0);
@@ -106,6 +106,9 @@ public:
   void Reset();
   
   // Risk and performance methods
+  void SetStopLoss(double percentage) { stop_loss_percentage_ = percentage; }
+  void SetMaxDailyLoss(double loss) { max_daily_loss_ = loss; }
+  bool IsStrategyDisabled() const;
   RiskMetrics CalculateRiskMetrics() const;
   bool ExportData(const std::string &format, const std::string &filename) const;
   PerformanceStats GetPerformanceStats() const;
@@ -141,8 +144,14 @@ private:
   std::unordered_map<uint64_t, TrackedOrder> tracked_orders_;
   int64_t running_position_ = 0;
   double realized_pnl_ = 0.0;
+  double average_cost_ = 0.0;
   double current_market_price_ = 0.0;
   size_t total_trades_ = 0;
+
+  // Risk management state
+  double stop_loss_percentage_ = 0.0; // 0.0 means no stop-loss
+  double max_daily_loss_ = 0.0;       // 0.0 means no daily loss limit
+  bool strategy_disabled_ = false;
 
   // Snapshot management
   std::vector<PortfolioSnapshot> snapshots_;
@@ -159,10 +168,15 @@ private:
 
 
   // Helper methods
+  void CheckStopLoss();
+  void CheckDailyLossLimit();
+  void HandleLongPositionTrade(bool is_buy, double trade_price,
+                               int64_t trade_quantity);
+  void HandleShortPositionTrade(bool is_buy, double trade_price,
+                                int64_t trade_quantity);
   void TakeSnapshot(uint64_t timestamp = 0);
   void WriteCSVHeader();
   void WriteSnapshotToCSV(const PortfolioSnapshot &snapshot);
   std::string TimestampToString(uint64_t timestamp_ns) const;
-  double CalculateCost() const;
   double CalculateUnrealizedPnL() const;
 };

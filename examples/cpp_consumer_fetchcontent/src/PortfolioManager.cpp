@@ -1,6 +1,7 @@
 #include "PortfolioManager.h"
 #include "Trade.h"
 #include "IStrategy.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -32,93 +33,39 @@ void PortfolioManager::OnOrderSubmitted(uint64_t order_id, uint64_t user_id,
   if (user_id != TRACKED_USER_ID) {
     return;
   }
-
   if (timestamp == 0) {
     timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::steady_clock::now().time_since_epoch())
                     .count();
   }
-
   tracked_order_ids_.insert(order_id);
   tracked_orders_.emplace(
       order_id, TrackedOrder(order_id, is_buy, quantity, price, timestamp));
-  current_market_price_ = static_cast<double>(price);
-
-  // Update position and P&L based on order commitment
-  int64_t position_change = is_buy ? static_cast<int64_t>(quantity) : -static_cast<int64_t>(quantity);
-  running_position_ += position_change;
-
-  // Record cash flow as realized P&L
-  if (is_buy) {
-    // Long order: negative cash flow (paying money)
-    realized_pnl_ -= static_cast<double>(quantity) * static_cast<double>(price);
-  } else {
-    // Short order: positive cash flow (receiving money)
-    realized_pnl_ += static_cast<double>(quantity) * static_cast<double>(price);
-  }
-
-  total_trades_++;
-
-  std::cout << "[PORTFOLIO] Tracking order " << order_id << " for user "
-            << user_id << " (" << (is_buy ? "BUY" : "SELL") << " " << quantity
-            << " @ " << price << "). Position: " << running_position_ << std::endl;
-
-  TakeSnapshot(timestamp);
 }
 
-void PortfolioManager::OnTradeExecuted(const Trade &trade) {
-  bool aggressor_tracked = trade.aggressor_user_id == TRACKED_USER_ID;
-  bool resting_tracked = trade.resting_user_id == TRACKED_USER_ID;
+void PortfolioManager::OnTrade(const Trade &trade) {
+  bool is_buy = trade.aggressor_is_buy;
+  double trade_price = static_cast<double>(trade.price);
+  int64_t trade_quantity = static_cast<int64_t>(trade.quantity);
 
-  if (!aggressor_tracked && !resting_tracked) {
-    current_market_price_ = static_cast<double>(trade.price);
-    return;
-  }
+  current_market_price_ = trade_price;
+  total_trades_++;
 
-  current_market_price_ = static_cast<double>(trade.price);
-
-  // Update remaining quantities for executed orders
-  if (aggressor_tracked) {
-    auto it = tracked_orders_.find(trade.aggressor_order_id);
-    if (it != tracked_orders_.end()) {
-      it->second.remaining_quantity -= trade.quantity;
-    }
-    if (trade.aggressor_is_buy) {
-      // Aggressor is buying: increase position
-      running_position_ += static_cast<int64_t>(trade.quantity);
-      // Decrease cash flow (buying costs money)
-      realized_pnl_ -= static_cast<double>(trade.quantity) * static_cast<double>(trade.price);
-
+  if (running_position_ > 0) {
+    HandleLongPositionTrade(is_buy, trade_price, trade_quantity);
+  } else if (running_position_ < 0) {
+    HandleShortPositionTrade(is_buy, trade_price, trade_quantity);
+  } else {
+    // No existing position, so this trade opens one
+    if (is_buy) {
+      HandleLongPositionTrade(is_buy, trade_price, trade_quantity);
     } else {
-      // Aggressor is selling: decrease position
-      running_position_ -= static_cast<int64_t>(trade.quantity);
-      // Increase cash flow (selling brings in money)
-      realized_pnl_ += static_cast<double>(trade.quantity) * static_cast<double>(trade.price);
+      HandleShortPositionTrade(is_buy, trade_price, trade_quantity);
     }
   }
 
-  if (resting_tracked) {
-    auto it = tracked_orders_.find(trade.resting_order_id);
-    if (it != tracked_orders_.end()) {
-      it->second.remaining_quantity -= trade.quantity;
-    }
-    if (!trade.aggressor_is_buy) {
-      // Resting order is buying: increase position
-      running_position_ += static_cast<int64_t>(trade.quantity);
-      // Decrease cash flow (buying costs money)
-      realized_pnl_ -= static_cast<double>(trade.quantity) * static_cast<double>(trade.price);
-
-    } else {
-      // Resting order is selling: decrease position
-      running_position_ -= static_cast<int64_t>(trade.quantity);
-      // Increase cash flow (selling brings in money)
-      realized_pnl_ += static_cast<double>(trade.quantity) * static_cast<double>(trade.price);
-    }
-  }
-
-  std::cout << "[PORTFOLIO] Trade executed involving tracked order(s). "
-               "Running position: " << running_position_
-            << ", Price: " << current_market_price_ << std::endl;
+  CheckStopLoss();
+  CheckDailyLossLimit();
 
   TakeSnapshot(trade.ts_executed);
 }
@@ -141,6 +88,7 @@ void PortfolioManager::UpdateMarketPrice(double price, uint64_t timestamp) {
 
   // Take snapshot on price updates if we have a position
   if (running_position_ != 0) {
+    CheckStopLoss();
     TakeSnapshot(timestamp);
   }
 }
@@ -162,8 +110,8 @@ void PortfolioManager::PrintPortfolioSummary() const {
             << std::endl;
   std::cout << "Current Market Price: $" << std::fixed << std::setprecision(2)
             << (current_market_price_ / 100.0) << std::endl;
-  std::cout << "Current Cost: $" << std::fixed << std::setprecision(2)
-            << (CalculateCost() / 100.0) << std::endl;
+  std::cout << "Average Cost: $" << std::fixed << std::setprecision(2)
+            << (average_cost_ / 100.0) << std::endl;
   std::cout << "Position Value: $" << std::fixed << std::setprecision(2)
             << ((current_market_price_ * std::abs(running_position_)) / 100.0)
             << std::endl;
@@ -356,37 +304,6 @@ void PortfolioManager::WriteSnapshotToCSV(const PortfolioSnapshot &snapshot) {
   }
 }
 
-double PortfolioManager::CalculateCost() const {
-  if (running_position_ == 0) {
-    return 0.0;
-  }
-
-  double total_cost = 0.0;
-  int64_t total_position = 0;
-
-  // Sum up costs from all tracked orders that contributed to current position
-  for (const auto& [order_id, order] : tracked_orders_) {
-    uint64_t executed_quantity = order.quantity - order.remaining_quantity;
-    if (executed_quantity > 0) {
-      double order_cost = static_cast<double>(executed_quantity * order.price);
-      if (order.is_buy) {
-        total_cost += order_cost;
-        total_position += static_cast<int64_t>(executed_quantity);
-      } else {
-        total_cost -= order_cost;
-        total_position -= static_cast<int64_t>(executed_quantity);
-      }
-    }
-  }
-
-  if (total_position == 0) {
-    return 0.0;
-  }
-
-  // For cost basis calculation, we want the average price (always positive)
-  // regardless of direction, since cost basis represents the price level
-  return std::abs(total_cost) / static_cast<double>(std::abs(total_position));
-}
 
 double PortfolioManager::GetTotalCostBasis() const {
   if (running_position_ == 0) {
@@ -420,23 +337,49 @@ double PortfolioManager::GetReturnOnEquity() const {
 }
 
 double PortfolioManager::CalculateUnrealizedPnL() const {
-  if (running_position_ == 0 || current_market_price_ == 0.0) {
+  if (running_position_ == 0) {
     return 0.0;
   }
+  // For short positions, PnL is (entry_price - current_price)
+  // which is the negative of the long position calculation.
+  return (current_market_price_ - average_cost_) * running_position_;
+}
 
-  double cost = CalculateCost();
-  if (cost == 0.0) {
-    return 0.0;
-  }
-
-  if (running_position_ > 0) {
-    // Long position
-    return static_cast<double>(running_position_) *
-           (current_market_price_ - cost);
+void PortfolioManager::HandleLongPositionTrade(bool is_buy, double trade_price,
+                                             int64_t trade_quantity) {
+  if (is_buy) {
+    // Increasing a long position
+    double current_value = average_cost_ * running_position_;
+    double trade_value = trade_price * trade_quantity;
+    running_position_ += trade_quantity;
+    average_cost_ = (current_value + trade_value) / running_position_;
   } else {
-    // Short position
-    return static_cast<double>(std::abs(running_position_)) *
-           (cost - current_market_price_);
+    // Reducing or closing a long position
+    double pnl = (trade_price - average_cost_) * trade_quantity;
+    realized_pnl_ += pnl;
+    running_position_ -= trade_quantity;
+    if (running_position_ == 0) {
+      average_cost_ = 0.0;
+    }
+  }
+}
+
+void PortfolioManager::HandleShortPositionTrade(bool is_buy, double trade_price,
+                                              int64_t trade_quantity) {
+  if (!is_buy) {
+    // Opening or increasing a short position
+    double current_value = average_cost_ * std::abs(running_position_);
+    double trade_value = trade_price * trade_quantity;
+    running_position_ -= trade_quantity;
+    average_cost_ = (current_value + trade_value) / std::abs(running_position_);
+  } else {
+    // Closing or reducing a short position
+    double pnl = (average_cost_ - trade_price) * trade_quantity;
+    realized_pnl_ += pnl;
+    running_position_ += trade_quantity;
+    if (running_position_ == 0) {
+      average_cost_ = 0.0;
+    }
   }
 }
 
@@ -448,7 +391,7 @@ void PortfolioManager::TakeSnapshot(uint64_t timestamp) {
   }
 
   PortfolioSnapshot snapshot(timestamp, running_position_,
-                             current_market_price_, CalculateCost(),
+                             current_market_price_, average_cost_,
                              CalculateUnrealizedPnL(), realized_pnl_,
                              total_trades_);
 
@@ -484,10 +427,12 @@ void PortfolioManager::Reset() {
   tracked_orders_.clear();
   running_position_ = 0;
   realized_pnl_ = 0.0;
+  average_cost_ = 0.0;
   current_market_price_ = 0.0;
   total_trades_ = 0;
   snapshots_.clear();
   last_snapshot_timestamp_ = 0;
+  strategy_disabled_ = false;
 
   std::cout << "[PORTFOLIO] Portfolio state reset for user " << TRACKED_USER_ID
             << std::endl;
@@ -530,6 +475,40 @@ void PortfolioManager::OnOrderModified(uint64_t order_id, uint64_t new_quantity,
 const TrackedOrder *PortfolioManager::GetOrderDetails(uint64_t order_id) const {
   auto it = tracked_orders_.find(order_id);
   return (it != tracked_orders_.end()) ? &it->second : nullptr;
+}
+
+bool PortfolioManager::IsStrategyDisabled() const {
+  return strategy_disabled_;
+}
+
+void PortfolioManager::CheckStopLoss() {
+    if (stop_loss_percentage_ == 0.0 || running_position_ == 0) {
+        return;
+    }
+
+    double unrealized_pnl = CalculateUnrealizedPnL();
+    double position_value = GetPositionValue();
+
+    if (position_value > 0 && (unrealized_pnl / position_value) < -stop_loss_percentage_) {
+        std::cout << "[PORTFOLIO] Stop-loss triggered! Unrealized PnL: " << unrealized_pnl
+                  << ", Position Value: " << position_value << std::endl;
+        // This is a simplified implementation. A real implementation would
+        // need to create and submit an order to close the position.
+        // For now, we'll just disable the strategy.
+        strategy_disabled_ = true;
+    }
+}
+
+void PortfolioManager::CheckDailyLossLimit() {
+    if (max_daily_loss_ == 0.0) {
+        return;
+    }
+
+    if (realized_pnl_ < -max_daily_loss_) {
+        std::cout << "[PORTFOLIO] Maximum daily loss limit reached! Realized PnL: "
+                  << realized_pnl_ << std::endl;
+        strategy_disabled_ = true;
+    }
 }
 
 RiskMetrics PortfolioManager::CalculateRiskMetrics() const {

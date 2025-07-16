@@ -123,6 +123,12 @@ public:
    */
   virtual StrategyAction ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot) = 0;
 
+  /**
+   * @brief Process trade data and update strategy state
+   * @param trade Trade data
+   */
+  virtual void ProcessTradeData(const Trade& trade) = 0;
+
 
 
   /**
@@ -183,6 +189,7 @@ public:
 
   // Pure virtual - must be implemented by derived classes
   virtual StrategyAction ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot) = 0;
+  virtual void ProcessTradeData(const Trade& trade) override;
 
   // Interface implementations
   virtual void Reset() override;

@@ -17,7 +17,10 @@ Strategy::Strategy(const std::string &name, uint64_t user_id)
 
 // Default implementation is now removed - derived classes must implement ProcessOrderBookData
 
-
+void Strategy::ProcessTradeData(const Trade& /*trade*/) {
+    // Default implementation does nothing.
+    // Derived classes can override this to process trade data.
+}
 
 void Strategy::Reset() {
   // Reset to default state
