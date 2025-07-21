@@ -1,3 +1,0 @@
-When editing files containing special character sequences like '&&', the `apply_diff` tool may fail to find a match, even when the search string appears to be correct.
-
-To work around this, the `search_and_replace` tool should be used instead. This tool has been shown to correctly handle these special characters and can be used as a reliable alternative to `apply_diff` in these situations.

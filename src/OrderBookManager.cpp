@@ -2,8 +2,9 @@
 #include "PortfolioManager.h"
 #include "TopOfBookTracker.h"
 #include "DatabentoProcessor.h"
-#include "OrderImbalanceStrategy.h"
-#include <iostream>
+#include "Logger.h"
+#include "DatabentoCache.h"
+#include "MeanReversionStrategy.h"
 #include <utility>
 
 OrderBookManager::OrderBookManager(uint64_t tracked_user_id)
@@ -22,9 +23,9 @@ void OrderBookManager::InitializeAfterConstruction() {
     if (order_book_) {
         try {
             order_book_->RegisterClient(shared_from_this());
-            std::cout << "[OrderBookManager] Successfully registered as order book client" << '\n';
+            *GLogger << "[OrderBookManager] Successfully registered as order book client" << '\n';
         } catch (const std::exception& e) {
-            std::cerr << "[OrderBookManager] Error registering as client: " << e.what() << '\n';
+            *GLogger << "[OrderBookManager] Error registering as client: " << e.what() << '\n';
         }
     }
     
@@ -57,20 +58,20 @@ OrderBookSnapshot OrderBookManager::GetOrderBookSnapshot() const {
 uint64_t OrderBookManager::SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price,
                                 uint64_t ts_received, uint64_t ts_executed) {
     if (!order_book_) {
-        std::cerr << "[OrderBookManager] Cannot submit order - order book not initialized" << '\n';
+        *GLogger << "[OrderBookManager] Cannot submit order - order book not initialized" << '\n';
         return 0;
     }
     
     uint64_t internal_order_id = order_book_->AddOrder(user_id, is_buy, quantity, price, ts_received, ts_executed);
     portfolio_manager_->OnOrderSubmitted(internal_order_id, user_id, is_buy, quantity, price, ts_received);
-    std::cout << "[OrderBookManager] Submitting ID " << internal_order_id << " order for user " << user_id 
-              << ": " << (is_buy ? "BUY" : "SELL") << " " << quantity 
+    *GLogger << "[OrderBookManager] Submitting ID " << internal_order_id << " order for user " << user_id
+              << ": " << (is_buy ? "BUY" : "SELL") << " " << quantity
               << "@" << (price / 100.0) << '\n';
     return internal_order_id;
 }
 void OrderBookManager::CancelOrder(uint64_t order_id) {
     if (!order_book_) {
-        std::cerr << "[OrderBookManager] Cannot cancel order - order book not initialized" << '\n';
+        *GLogger << "[OrderBookManager] Cannot cancel order - order book not initialized" << '\n';
         return;
     }
     order_book_->CancelOrder(order_id);
@@ -78,7 +79,7 @@ void OrderBookManager::CancelOrder(uint64_t order_id) {
 }
 void OrderBookManager::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price, uint64_t new_ts_received, uint64_t new_ts_executed) {
     if (!order_book_) {
-        std::cerr << "[OrderBookManager] Cannot modify order - order book not initialized" << '\n';
+        *GLogger << "[OrderBookManager] Cannot modify order - order book not initialized" << '\n';
         return;
     }
     order_book_->ModifyOrder(order_id, new_quantity, new_price, new_ts_received, new_ts_executed);
@@ -116,11 +117,12 @@ uint64_t OrderBookManager::GetMidPrice() const {
 // IClient Event Handlers
 
 void OrderBookManager::OnTradeExecuted(const Trade &trade) {
+    *GLogger << "[OrderBookManager] Received trade notification: " << trade.ToString() << '\n';
     // Route to portfolio manager
     RouteToPortfolio(trade);
 
     if (strategy_) {
-        strategy_->ProcessTradeData(trade);
+        strategy_->update(trade);
     }
 
     if (trade.aggressor_order_closed) {
@@ -139,7 +141,7 @@ void OrderBookManager::OnOrderAcknowledged(uint64_t /*order_id*/) {
 
 void OrderBookManager::OnOrderCancelled(uint64_t order_id) {
     // Handle order cancellation notification (order already cancelled by OrderBook)
-    std::cout << "[OrderBookManager] Order " << order_id << " cancelled - notifying strategy" << '\n';
+    *GLogger << "[OrderBookManager] Order " << order_id << " cancelled - notifying strategy" << '\n';
     data_processor_->ClearOrderFromMapping(order_id);
     // Notify strategy of order book change
     NotifyStrategyOfOrderBookChange();
@@ -148,7 +150,7 @@ void OrderBookManager::OnOrderCancelled(uint64_t order_id) {
 void OrderBookManager::OnOrderModified(uint64_t order_id, uint64_t new_quantity,
                      uint64_t new_price) {
     // Handle order modification notification (order already modified by OrderBook)
-    std::cout << "[OrderBookManager] Order " << order_id << " modified to " 
+    *GLogger << "[OrderBookManager] Order " << order_id << " modified to "
               << new_quantity << "@" << (new_price / 100.0) << " - notifying strategy" << '\n';
     
     // Notify strategy of order book change
@@ -156,12 +158,12 @@ void OrderBookManager::OnOrderModified(uint64_t order_id, uint64_t new_quantity,
 }
 
 void OrderBookManager::OnOrderRejected(uint64_t order_id, const std::string &reason) {
-    std::cerr << "Order " << order_id << " rejected: " << reason << '\n';
+    *GLogger << "Order " << order_id << " rejected: " << reason << '\n';
 }
 
 void OrderBookManager::OnOrderFilled(uint64_t order_id) {
     // Handle order filled notification (order was fully executed and removed)
-    std::cout << "[OrderBookManager] Order " << order_id << " filled completely - clearing mapping" << '\n';
+    *GLogger << "[OrderBookManager] Order " << order_id << " filled completely - clearing mapping" << '\n';
     data_processor_->ClearOrderFromMapping(order_id);
     // Notify strategy of order book change
     NotifyStrategyOfOrderBookChange();
@@ -227,8 +229,9 @@ std::shared_ptr<OrderBook> OrderBookManager::GetOrderBook() const {
 
 void OrderBookManager::SetStrategy(std::shared_ptr<IStrategy> strategy) {
     strategy_ = std::move(strategy);
-    if (strategy_ && portfolio_manager_) {
-        strategy_->SetPortfolioManager(portfolio_manager_);
+    if (strategy_) {
+        strategy_->set_portfolio_manager(portfolio_manager_);
+        strategy_->set_order_client(this);
     }
 }
 
@@ -285,10 +288,7 @@ std::shared_ptr<DatabentoProcessor> OrderBookManager::GetDataProcessor() const {
 
 
 void OrderBookManager::RouteToPortfolio(const Trade& trade) {
-    if (portfolio_manager_ && IsUserTracked(trade.aggressor_user_id)) {
-        portfolio_manager_->OnTrade(trade);
-    }
-    if (portfolio_manager_ && IsUserTracked(trade.resting_user_id)) {
+    if (portfolio_manager_) {
         portfolio_manager_->OnTrade(trade);
     }
 }
@@ -306,6 +306,79 @@ void OrderBookManager::RouteToTopOfBookTracker(uint64_t best_bid, uint64_t best_
 void OrderBookManager::NotifyStrategyOfOrderBookChange() {
     if (strategy_) {
         OrderBookSnapshot l3_snapshot = GetOrderBookSnapshot();
-        strategy_->ProcessOrderBookData(l3_snapshot);
+        strategy_->update(l3_snapshot);
+    }
+}
+
+void OrderBookManager::RunHistoricalDataDemo() {
+    *GLogger << "\n=== Historical MBO Data Demo for ES Futures ===" << '\n';
+    
+    // Check if API key is available
+    const char* api_key = std::getenv("DATABENTO_API_KEY");
+    bool has_api_key = (api_key && strlen(api_key) > 0);
+    
+    if (!has_api_key) {
+        *GLogger << "No DATABENTO_API_KEY found. Will use cached data only." << '\n';
+    } else {
+        *GLogger << "API key found. Will use cached data or fetch if needed." << '\n';
+    }
+    
+    try {
+        // Initialize cache and parameters
+        DatabentoCache cache("databento_cache");
+        
+        // Historical data parameters
+        std::string dataset = "GLBX.MDP3";
+        std::string start_time = "2024-06-28T15:30";
+        std::string end_time = "2024-06-28T15:35";
+        std::vector<std::string> symbols = {"ESU4"};
+        Schema schema = Schema::Mbo;
+        
+        std::string cache_key = cache.generateCacheKey(dataset, start_time, end_time, symbols, schema);
+        std::string cache_file_path = cache.getCacheFilePath(cache_key);
+        
+        *GLogger << "Cache key: " << cache_key << '\n';
+        *GLogger << "Cache file: " << cache_file_path << '\n';
+        cache.listCache();
+        
+        if (!data_processor_) {
+            data_processor_ = std::make_shared<DatabentoProcessor>();
+            SetDataProcessor(data_processor_);
+        }
+        
+        InitializeAfterConstruction();
+        
+        *GLogger << "Fetching historical MBO data for ES S&P 500 futures..." << '\n';
+        
+        if (cache.hasCachedData(cache_key)) {
+            *GLogger << "\n[CACHE] Loading data from cache file..." << '\n';
+            DbnFileStore dbn_store{cache_file_path};
+            
+            auto record_callback = [this](const Record& record) -> KeepGoing {
+                return data_processor_->ProcessMarketData(record);
+            };
+            
+            dbn_store.Replay(record_callback);
+        } else {
+            if (!has_api_key) {
+                *GLogger << "\n[ERROR] No cached data found and no API key available." << '\n';
+                return;
+            }
+            
+            *GLogger << "\n[API] Fetching fresh data from Databento API..." << '\n';
+            auto client = HistoricalBuilder{}.SetKeyFromEnv().Build();
+            auto dbn_store = client.TimeseriesGetRangeToFile(dataset, {start_time, end_time}, symbols, schema, cache_file_path);
+            
+            auto record_callback = [this](const Record& record) -> KeepGoing {
+                return data_processor_->ProcessMarketData(record);
+            };
+            
+            dbn_store.Replay(record_callback);
+        }
+
+        portfolio_manager_->PrintPortfolioSummary();
+        
+    } catch (const std::exception& e) {
+        *GLogger << "Historical data demo error: " << e.what() << '\n';
     }
 }

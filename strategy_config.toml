@@ -1,0 +1,22 @@
+strategy_name = "MovingAverageCrossover"
+
+[[indicators]]
+name = "sma_fast"
+type = "SMA"
+parameters = { period = 10, source = "mid_price" }
+
+[[indicators]]
+name = "sma_slow"
+type = "SMA"
+parameters = { period = 50, source = "mid_price" }
+
+[[signals]]
+name = "buy_signal"
+type = "CrossesAbove"
+indicator_a = "sma_fast"
+indicator_b = "sma_slow"
+
+[[rules]]
+signal = "buy_signal"
+action = "BUY"
+quantity = 1

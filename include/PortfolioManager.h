@@ -137,6 +137,7 @@ public:
     return snapshots_;
   }
   const TrackedOrder *GetOrderDetails(uint64_t order_id) const;
+  const std::vector<Trade>& GetTrades() const;
 
 private:
   // Core portfolio state
@@ -147,6 +148,7 @@ private:
   double average_cost_ = 0.0;
   double current_market_price_ = 0.0;
   size_t total_trades_ = 0;
+  std::vector<Trade> trades_;
 
   // Risk management state
   double stop_loss_percentage_ = 0.0; // 0.0 means no stop-loss

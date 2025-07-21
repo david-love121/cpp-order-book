@@ -1,155 +1,91 @@
 #include "IStrategy.h"
+#include "SMAIndicator.h"
+#include "CrossesAboveSignal.h"
+#include "IClient.h"
+#include "OrderBookSnapshot.h"
+#include "Trade.h"
 #include "PortfolioManager.h"
-#include "TopOfBookTracker.h"
-#include "IndicatorLogger.h"
-#include <algorithm>
-#include <cmath>
-#include <iostream>
 
-// Strategy base class implementation
+Strategy::Strategy(const std::string& name) : m_name(name), m_order_client(nullptr) {}
 
-Strategy::Strategy(const std::string &name, uint64_t user_id)
-    : name_(name), user_id_(user_id), enabled_(true), signal_threshold_(0.1),
-      base_quantity_(1), portfolio_manager_(nullptr), risk_multiplier_(1.0), max_position_(10) {
-
-
-
-}
-
-// Default implementation is now removed - derived classes must implement ProcessOrderBookData
-
-void Strategy::ProcessTradeData(const Trade& /*trade*/) {
-    // Default implementation does nothing.
-    // Derived classes can override this to process trade data.
-}
-
-void Strategy::Reset() {
-  // Reset to default state
-  enabled_ = true;
-  signal_threshold_ = 0.1;
-  base_quantity_ = 1;
-  risk_multiplier_ = 1.0;
-  max_position_ = 10;
-}
-
-void Strategy::SetEnabled(bool enabled) {
-  enabled_ = enabled;
-}
-
-void Strategy::SetPortfolioManager(std::shared_ptr<PortfolioManager> portfolio_mgr) {
-  portfolio_manager_ = portfolio_mgr;
-}
-
-
-const std::string &Strategy::GetName() const {
-  return name_;
-}
-
-uint64_t Strategy::GetUserId() const {
-  return user_id_;
-}
-
-bool Strategy::IsEnabled() const {
-  return enabled_;
-}
-
-std::shared_ptr<PortfolioManager> Strategy::GetPortfolioManager() const {
-  return portfolio_manager_;
-}
-
-
-
-
-void Strategy::SetSignalThreshold(double threshold) {
-  signal_threshold_ = threshold;
-}
-
-double Strategy::GetSignalThreshold() const {
-  return signal_threshold_;
-}
-
-void Strategy::SetBaseQuantity(uint64_t quantity) {
-  base_quantity_ = quantity;
-}
-
-uint64_t Strategy::GetBaseQuantity() const {
-  return base_quantity_;
-}
-
-void Strategy::SetRiskMultiplier(double multiplier) {
-  risk_multiplier_ = multiplier;
-}
-
-double Strategy::GetRiskMultiplier() const {
-  return risk_multiplier_;
-}
-
-void Strategy::SetMaxPosition(uint64_t max_pos) {
-  max_position_ = max_pos;
-}
-
-uint64_t Strategy::GetMaxPosition() const {
-  return max_position_;
-}
-
-StrategyAction Strategy::SignalToAction(double signal_value) {
-  // Clamp signal value to [-1.0, 1.0]
-  signal_value = std::max(-1.0, std::min(1.0, signal_value));
-
-  double abs_signal = std::abs(signal_value);
-
-  // Check if signal is strong enough
-  if (abs_signal < signal_threshold_) {
-    return StrategyAction(StrategySignal::NONE, 0, abs_signal);
-  }
-
-  // Check position limits if portfolio manager is available
-  uint64_t quantity = base_quantity_;
-  if (portfolio_manager_) {
-    int64_t current_position = portfolio_manager_->GetRunningPosition();
-
-
-    // Adjust quantity based on current position and limits
-    if (signal_value > 0 &&
-        current_position >= static_cast<int64_t>(max_position_)) {
-      return StrategyAction(StrategySignal::HOLD, 0, abs_signal);
-    }
-    if (signal_value < 0 &&
-        current_position <= -static_cast<int64_t>(max_position_)) {
-      return StrategyAction(StrategySignal::HOLD, 0, abs_signal);
+void Strategy::update(const OrderBookSnapshot& order_book) {
+    uint64_t mid_price = order_book.GetMidPrice();
+    if (mid_price > 0) {
+        for (auto& [name, indicator] : m_indicators) {
+            indicator->update(mid_price);
+        }
     }
 
-    // Scale quantity by risk multiplier and signal strength
-    quantity = static_cast<uint64_t>(quantity * risk_multiplier_ * abs_signal);
-    quantity = std::max(1UL, quantity); // Minimum quantity of 1
-  }
-
-  // Determine signal direction
-  StrategySignal signal =
-      (signal_value > 0) ? StrategySignal::BUY : StrategySignal::SELL;
-
-  return StrategyAction(signal, quantity, abs_signal);
-}
-
-std::vector<std::string> Strategy::GetIndicatorNames() const {
-    return indicator_names_;
-}
-
-std::vector<double> Strategy::GetIndicatorValues() const {
-    return indicator_values_;
-}
-
-void Strategy::SetLogger(std::shared_ptr<IndicatorLogger> logger) {
-    logger_ = logger;
-    if (logger_) {
-        logger_->WriteHeader(GetIndicatorNames());
+    for (const auto& rule : m_rules) {
+        if (m_signals[rule.signal_name]->is_active()) {
+            if (rule.action == trading::Action::BUY) {
+                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, true, rule.quantity, order_book.GetBestAsk(), 0, 0);
+            } else if (rule.action == trading::Action::SELL) {
+                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, false, rule.quantity, order_book.GetBestBid(), 0, 0);
+            }
+        }
     }
 }
 
-void Strategy::LogIndicators(uint64_t timestamp) {
-    if (logger_) {
-        logger_->WriteRow(timestamp, GetIndicatorValues());
+void Strategy::update(const Trade& trade) {
+    for (auto& [name, indicator] : m_indicators) {
+        indicator->update(trade.price);
     }
+}
+
+void Strategy::from_toml(const toml::table& config) {
+    if (auto indicators = config["indicators"].as_array()) {
+        for (auto&& elem : *indicators) {
+            const auto& indicator_config = *elem.as_table();
+            std::string type = indicator_config["type"].value_or("");
+            std::string name = indicator_config["name"].value_or("");
+
+            if (type == "SMA") {
+                auto indicator = std::make_shared<SMAIndicator>(name);
+                indicator->configure(indicator_config);
+                m_indicators[name] = indicator;
+            }
+        }
+    }
+
+    if (auto signals = config["signals"].as_array()) {
+        for (auto&& elem : *signals) {
+            const auto& signal_config = *elem.as_table();
+            std::string type = signal_config["type"].value_or("");
+            std::string name = signal_config["name"].value_or("");
+
+            if (type == "CrossesAbove") {
+                std::string indicator_a_name = signal_config["indicator_a"].value_or("");
+                std::string indicator_b_name = signal_config["indicator_b"].value_or("");
+                m_signals[name] = std::make_shared<CrossesAboveSignal>(name, m_indicators[indicator_a_name], m_indicators[indicator_b_name]);
+            }
+        }
+    }
+
+    if (auto rules = config["rules"].as_array()) {
+        for (auto&& elem : *rules) {
+            const auto& rule_config = *elem.as_table();
+            std::string signal_name = rule_config["signal"].value_or("");
+            std::string action_str = rule_config["action"].value_or("");
+            int quantity = rule_config["quantity"].value_or(0);
+
+            trading::Action action = (action_str == "BUY") ? trading::Action::BUY : trading::Action::SELL;
+            m_rules.push_back({signal_name, action, quantity});
+        }
+    }
+}
+
+toml::table Strategy::to_toml() const {
+    // This is a simplified implementation for now
+    return toml::table{};
+}
+
+void Strategy::set_order_client(IClient* client) {
+    m_order_client = client;
+}
+
+void Strategy::set_portfolio_manager(std::shared_ptr<PortfolioManager> portfolio_manager) {
+    m_portfolio_manager = portfolio_manager;
 }
 
 

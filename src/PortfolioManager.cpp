@@ -1,6 +1,7 @@
 #include "PortfolioManager.h"
 #include "Trade.h"
 #include "IStrategy.h"
+#include "Logger.h"
 
 #include <algorithm>
 #include <chrono>
@@ -44,7 +45,14 @@ void PortfolioManager::OnOrderSubmitted(uint64_t order_id, uint64_t user_id,
 }
 
 void PortfolioManager::OnTrade(const Trade &trade) {
-  bool is_buy = trade.aggressor_is_buy;
+  *GLogger << "[PortfolioManager] OnTrade received trade: " << trade.ToString() << '\n';
+  if (trade.aggressor_user_id != tracked_user_id_ && trade.resting_user_id != tracked_user_id_) {
+    *GLogger << "[PortfolioManager] Trade does not involve tracked user " << tracked_user_id_ << ". Ignoring." << '\n';
+    return; // Not our trade
+  }
+  *GLogger << "[PortfolioManager] Trade involves tracked user " << tracked_user_id_ << ". Processing." << '\n';
+  trades_.push_back(trade);
+  bool is_buy = trade.aggressor_user_id == tracked_user_id_ ? trade.aggressor_is_buy : !trade.aggressor_is_buy;
   double trade_price = static_cast<double>(trade.price);
   int64_t trade_quantity = static_cast<int64_t>(trade.quantity);
 
@@ -471,10 +479,13 @@ void PortfolioManager::OnOrderModified(uint64_t order_id, uint64_t new_quantity,
               << new_quantity << "@" << new_price << '\n';
   }
 }
-
 const TrackedOrder *PortfolioManager::GetOrderDetails(uint64_t order_id) const {
   auto it = tracked_orders_.find(order_id);
   return (it != tracked_orders_.end()) ? &it->second : nullptr;
+}
+
+const std::vector<Trade>& PortfolioManager::GetTrades() const {
+    return trades_;
 }
 
 bool PortfolioManager::IsStrategyDisabled() const {

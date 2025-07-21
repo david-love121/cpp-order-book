@@ -19,10 +19,29 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/databento/databento-cpp.git
     GIT_TAG HEAD
 )
+set(CMAKE_POSITION_INDEPENDENT_CODE ON) # Add this for PIC
 FetchContent_MakeAvailable(databento)
+
+FetchContent_Declare(
+    tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG v3.3.0
+)
+FetchContent_MakeAvailable(tomlplusplus)
+
+FetchContent_Declare(
+    pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11.git
+    GIT_TAG v2.12.0
+)
+# pybind11 recommends this for best practices
+set(PYBIND11_FINDPYTHON ON)
+FetchContent_MakeAvailable(pybind11)
+
 
 # Collect all source and header files
 file(GLOB_RECURSE ORDERBOOK_SOURCES "src/*.cpp")
+list(FILTER ORDERBOOK_SOURCES EXCLUDE REGEX ".*/(bindings|main)\\.cpp$") # Exclude bindings.cpp and main.cpp
 file(GLOB_RECURSE ORDERBOOK_HEADERS "include/*.h")
 
 # Create the OrderBook library
@@ -30,6 +49,7 @@ add_library(OrderBookLib STATIC
     ${ORDERBOOK_SOURCES}
     ${ORDERBOOK_HEADERS}
 )
+set_target_properties(OrderBookLib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Set the include directories for the library
 target_include_directories(OrderBookLib
@@ -42,6 +62,7 @@ target_include_directories(OrderBookLib
 target_link_libraries(OrderBookLib
     PUBLIC
         databento::databento
+        tomlplusplus::tomlplusplus
 )
 
 # Add executable for the trader application
@@ -99,4 +120,23 @@ if(BUILD_TESTING)
     # way to integrate Google Test with CTest, as it allows CTest to run
     # individual tests and provide detailed reports.
     gtest_discover_tests(orderbook_tests)
+endif()
+
+# --- Python Bindings ---
+option(BUILD_PYTHON_BINDINGS "Build the python bindings" ON)
+
+if(BUILD_PYTHON_BINDINGS)
+    find_package(Python3 COMPONENTS Interpreter Development)
+    if(NOT Python3_FOUND)
+        find_package(Python REQUIRED COMPONENTS Interpreter Development)
+    endif()
+    
+    pybind11_add_module(cpp_order_book_engine
+        src/bindings.cpp
+    )
+
+    target_link_libraries(cpp_order_book_engine
+        PRIVATE
+            OrderBookLib
+    )
 endif()

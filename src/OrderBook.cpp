@@ -3,6 +3,7 @@
 #include "PriceLevel.h"
 #include "Trade.h"
 #include "IClient.h"
+#include "Logger.h"
 #include <iostream>
 #include <chrono>
 #include <algorithm>
@@ -373,6 +374,13 @@ void OrderBook::UnregisterClient(uint64_t client_id) {
 
 // Client notification methods
 void OrderBook::NotifyTradeExecuted(const Trade& trade) {
+    // Use a shared logger if available, otherwise fallback to cerr
+    if (GLogger) {
+        *GLogger << "[OrderBook] Notifying " << clients_.size() << " clients of trade: " << trade.ToString() << '\n';
+    } else {
+        std::cerr << "[OrderBook] Notifying " << clients_.size() << " clients of trade: " << trade.ToString() << '\n';
+    }
+
     for (const auto& [client_id, client] : clients_) {
         try {
             client->OnTradeExecuted(trade);

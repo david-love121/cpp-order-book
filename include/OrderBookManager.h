@@ -5,9 +5,11 @@
 #include "IClient.h"
 #include "OrderBook.h"
 #include "IStrategy.h"
+#include "OrderBookSnapshot.h"
 #include "TopOfBookTracker.h"
 #include "PortfolioManager.h"
 #include "Trade.h"
+#include "Logger.h"
 
 // Include Databento headers for market data processing
 #include <databento/live.hpp>
@@ -119,6 +121,9 @@ public:
     
     // L3 Order Book data access
     OrderBookSnapshot GetOrderBookSnapshot() const;
+
+    // Demo runners
+    void RunHistoricalDataDemo();
     
     // Data processor management
     void SetDataProcessor(std::shared_ptr<DatabentoProcessor> processor);
