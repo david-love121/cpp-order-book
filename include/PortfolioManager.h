@@ -71,9 +71,9 @@ struct PerformanceStats {
 
 class PortfolioManager : public std::enable_shared_from_this<PortfolioManager> {
 public:
-  static constexpr uint64_t TRACKED_USER_ID = 1000;
+  uint64_t tracked_user_id_;
 
-  explicit PortfolioManager(const std::string &csv_filename = "");
+  explicit PortfolioManager(uint64_t tracked_user_id, const std::string &csv_filename = "");
   ~PortfolioManager();
 
   // Order tracking methods

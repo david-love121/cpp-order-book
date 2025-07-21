@@ -1,5 +1,6 @@
 #include "DatabentoProcessor.h"
 #include <iomanip>
+#include <utility>
 
 DatabentoProcessor::DatabentoProcessor()
     : current_symbol_("ESU4") {
@@ -8,7 +9,7 @@ DatabentoProcessor::DatabentoProcessor()
 
 // Core interface implementation
 void DatabentoProcessor::SetOrderClient(std::shared_ptr<IClient> order_client) {
-    order_client_ = order_client;
+    order_client_ = std::move(order_client);
 }
 
 KeepGoing DatabentoProcessor::ProcessMarketData(const Record &rec) {

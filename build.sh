@@ -8,8 +8,8 @@ mkdir -p build
 # Navigate into the build directory
 cd build
 
-# Configure the project with CMake
-cmake ../ -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+# Configure the project with CMake for Ninja
+cmake ../ -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
-# Build the project
-make -j8
+# Build the project with Ninja
+ninja

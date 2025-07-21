@@ -4,13 +4,14 @@
 #include "DatabentoProcessor.h"
 #include "OrderImbalanceStrategy.h"
 #include <iostream>
+#include <utility>
 
 OrderBookManager::OrderBookManager(uint64_t tracked_user_id)
     : client_id_(1), client_name_("OrderBookManager"), tracked_user_id_(tracked_user_id)
 {
     // Initialize owned components
     order_book_ = std::make_shared<OrderBook>();
-    portfolio_manager_ = std::make_shared<PortfolioManager>("portfolio_" + std::to_string(tracked_user_id_) + ".csv");
+    portfolio_manager_ = std::make_shared<PortfolioManager>(tracked_user_id_, "portfolio_" + std::to_string(tracked_user_id_) + ".csv");
     tob_tracker_ = std::make_shared<TopOfBookTracker>();
     tob_tracker_->EnableCSV("tob_" + std::to_string(tracked_user_id_) + ".csv");
     //Registration of shared pointers back to this IClient are initialized after construction
@@ -23,7 +24,7 @@ void OrderBookManager::InitializeAfterConstruction() {
             order_book_->RegisterClient(shared_from_this());
             std::cout << "[OrderBookManager] Successfully registered as order book client" << '\n';
         } catch (const std::exception& e) {
-            std::cerr << "[OrderBookManager] Error registering as client: " << e.what() << std::endl;
+            std::cerr << "[OrderBookManager] Error registering as client: " << e.what() << '\n';
         }
     }
     
@@ -56,7 +57,7 @@ OrderBookSnapshot OrderBookManager::GetOrderBookSnapshot() const {
 uint64_t OrderBookManager::SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price,
                                 uint64_t ts_received, uint64_t ts_executed) {
     if (!order_book_) {
-        std::cerr << "[OrderBookManager] Cannot submit order - order book not initialized" << std::endl;
+        std::cerr << "[OrderBookManager] Cannot submit order - order book not initialized" << '\n';
         return 0;
     }
     
@@ -64,12 +65,12 @@ uint64_t OrderBookManager::SubmitOrder(uint64_t user_id, bool is_buy, uint64_t q
     portfolio_manager_->OnOrderSubmitted(internal_order_id, user_id, is_buy, quantity, price, ts_received);
     std::cout << "[OrderBookManager] Submitting ID " << internal_order_id << " order for user " << user_id 
               << ": " << (is_buy ? "BUY" : "SELL") << " " << quantity 
-              << "@" << (price / 100.0) << std::endl;
+              << "@" << (price / 100.0) << '\n';
     return internal_order_id;
 }
 void OrderBookManager::CancelOrder(uint64_t order_id) {
     if (!order_book_) {
-        std::cerr << "[OrderBookManager] Cannot cancel order - order book not initialized" << std::endl;
+        std::cerr << "[OrderBookManager] Cannot cancel order - order book not initialized" << '\n';
         return;
     }
     order_book_->CancelOrder(order_id);
@@ -77,7 +78,7 @@ void OrderBookManager::CancelOrder(uint64_t order_id) {
 }
 void OrderBookManager::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price, uint64_t new_ts_received, uint64_t new_ts_executed) {
     if (!order_book_) {
-        std::cerr << "[OrderBookManager] Cannot modify order - order book not initialized" << std::endl;
+        std::cerr << "[OrderBookManager] Cannot modify order - order book not initialized" << '\n';
         return;
     }
     order_book_->ModifyOrder(order_id, new_quantity, new_price, new_ts_received, new_ts_executed);
@@ -138,7 +139,7 @@ void OrderBookManager::OnOrderAcknowledged(uint64_t /*order_id*/) {
 
 void OrderBookManager::OnOrderCancelled(uint64_t order_id) {
     // Handle order cancellation notification (order already cancelled by OrderBook)
-    std::cout << "[OrderBookManager] Order " << order_id << " cancelled - notifying strategy" << std::endl;
+    std::cout << "[OrderBookManager] Order " << order_id << " cancelled - notifying strategy" << '\n';
     data_processor_->ClearOrderFromMapping(order_id);
     // Notify strategy of order book change
     NotifyStrategyOfOrderBookChange();
@@ -148,19 +149,19 @@ void OrderBookManager::OnOrderModified(uint64_t order_id, uint64_t new_quantity,
                      uint64_t new_price) {
     // Handle order modification notification (order already modified by OrderBook)
     std::cout << "[OrderBookManager] Order " << order_id << " modified to " 
-              << new_quantity << "@" << (new_price / 100.0) << " - notifying strategy" << std::endl;
+              << new_quantity << "@" << (new_price / 100.0) << " - notifying strategy" << '\n';
     
     // Notify strategy of order book change
     NotifyStrategyOfOrderBookChange();
 }
 
 void OrderBookManager::OnOrderRejected(uint64_t order_id, const std::string &reason) {
-    std::cerr << "Order " << order_id << " rejected: " << reason << std::endl;
+    std::cerr << "Order " << order_id << " rejected: " << reason << '\n';
 }
 
 void OrderBookManager::OnOrderFilled(uint64_t order_id) {
     // Handle order filled notification (order was fully executed and removed)
-    std::cout << "[OrderBookManager] Order " << order_id << " filled completely - clearing mapping" << std::endl;
+    std::cout << "[OrderBookManager] Order " << order_id << " filled completely - clearing mapping" << '\n';
     data_processor_->ClearOrderFromMapping(order_id);
     // Notify strategy of order book change
     NotifyStrategyOfOrderBookChange();
@@ -225,7 +226,7 @@ std::shared_ptr<OrderBook> OrderBookManager::GetOrderBook() const {
 // Strategy management
 
 void OrderBookManager::SetStrategy(std::shared_ptr<IStrategy> strategy) {
-    strategy_ = strategy;
+    strategy_ = std::move(strategy);
     if (strategy_ && portfolio_manager_) {
         strategy_->SetPortfolioManager(portfolio_manager_);
     }
@@ -270,7 +271,7 @@ std::shared_ptr<IClient> OrderBookManager::GetClient() {
 // Data processor management
 
 void OrderBookManager::SetDataProcessor(std::shared_ptr<DatabentoProcessor> processor) {
-    data_processor_ = processor;
+    data_processor_ = std::move(processor);
     if (data_processor_ && order_book_) {
         data_processor_->SetOrderClient(shared_from_this());
     }

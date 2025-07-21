@@ -32,7 +32,7 @@ public:
     void ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price, uint64_t new_ts_received, uint64_t new_ts_executed);
 
     // Client management
-    void RegisterClient(std::shared_ptr<IClient> client);
+    void RegisterClient(const std::shared_ptr<IClient>& client);
     void UnregisterClient(uint64_t client_id);
 
     // Public API for data retrieval

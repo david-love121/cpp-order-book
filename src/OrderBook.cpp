@@ -356,7 +356,7 @@ OrderBook::~OrderBook() {
 }
 
 // Client management methods
-void OrderBook::RegisterClient(std::shared_ptr<IClient> client) {
+void OrderBook::RegisterClient(const std::shared_ptr<IClient>& client) {
     if (client) {
         clients_[client->GetClientId()] = client;
         client->Initialize();

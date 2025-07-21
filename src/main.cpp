@@ -208,21 +208,24 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
         order_imbalance_strategy->SetDecayFactor(decay_factor);
 
         order_imbalance_strategy->EnableAutoTrading(true);
-        order_imbalance_strategy->SetPortfolioManager(manager->GetPortfolioManager());
-        order_imbalance_strategy->SetOrderClient(manager->GetClient());
-        order_imbalance_strategy->SetSignalThreshold(min_signal_for_trade);  // Lower threshold for sensitivity
-        order_imbalance_strategy->SetBaseQuantity(2);       // Moderate base quantity
-        order_imbalance_strategy->SetMaxPosition(20);       // Limit max position size
-        // Set risk management parameters
-        manager->GetPortfolioManager()->SetStopLoss(stop_loss);
-        manager->GetPortfolioManager()->SetMaxDailyLoss(max_daily_loss);
-
-        manager->SetStrategy(order_imbalance_strategy);
-
-        // Create and set up the indicator logger
-        auto indicator_logger = std::make_shared<IndicatorLogger>("indicator_log.csv");
-        order_imbalance_strategy->SetLogger(indicator_logger);
+                order_imbalance_strategy->SetPortfolioManager(manager->GetPortfolioManager());
+                order_imbalance_strategy->SetOrderClient(manager->GetClient());
+                if (auto imbalance_strategy = std::dynamic_pointer_cast<OrderImbalanceStrategy>(order_imbalance_strategy)) {
+                    imbalance_strategy->SetSignalThreshold(min_signal_for_trade);  // Lower threshold for sensitivity
+                    imbalance_strategy->SetBaseQuantity(2);       // Moderate base quantity
+                    imbalance_strategy->SetMaxPosition(20);       // Limit max position size
+                }
+                // Set risk management parameters
+                manager->GetPortfolioManager()->SetStopLoss(stop_loss);
+                manager->GetPortfolioManager()->SetMaxDailyLoss(max_daily_loss);
         
+                manager->SetStrategy(order_imbalance_strategy);
+        
+                // Create and set up the indicator logger
+                auto indicator_logger = std::make_shared<IndicatorLogger>("indicator_log.csv");
+                if (auto imbalance_strategy = std::dynamic_pointer_cast<OrderImbalanceStrategy>(order_imbalance_strategy)) {
+                    imbalance_strategy->SetLogger(indicator_logger);
+                }
         std::cout << "OrderBookManager and DatabentoProcessor started successfully" << '\n';
         
         // Check if we have cached data

@@ -9,11 +9,11 @@
 #include <iomanip>
 #include <sstream>
 
-PortfolioManager::PortfolioManager(const std::string &csv_filename)
-    : csv_filename_(csv_filename), csv_enabled_(!csv_filename.empty()) {
+PortfolioManager::PortfolioManager(uint64_t tracked_user_id, const std::string &csv_filename)
+    : tracked_user_id_(tracked_user_id), csv_filename_(csv_filename), csv_enabled_(!csv_filename.empty()) {
 
-  std::cout << "[PORTFOLIO] Initialized for user " << TRACKED_USER_ID
-            << " (order ID tracking mode)" << std::endl;
+  std::cout << "[PORTFOLIO] Initialized for user " << tracked_user_id_
+            << " (order ID tracking mode)" << '\n';
 
   if (csv_enabled_) {
     EnableCSV(csv_filename);
@@ -30,7 +30,7 @@ PortfolioManager::~PortfolioManager() {
 void PortfolioManager::OnOrderSubmitted(uint64_t order_id, uint64_t user_id,
                                         bool is_buy, uint64_t quantity,
                                         uint64_t price, uint64_t timestamp) {
-  if (user_id != TRACKED_USER_ID) {
+  if (user_id != tracked_user_id_) {
     return;
   }
   if (timestamp == 0) {
@@ -103,75 +103,75 @@ void PortfolioManager::ForceSnapshot(uint64_t timestamp) {
 }
 
 void PortfolioManager::PrintPortfolioSummary() const {
-  std::cout << "\n=== Portfolio Summary (User " << TRACKED_USER_ID
-            << ") ===" << std::endl;
-  std::cout << "Tracked Orders: " << tracked_order_ids_.size() << std::endl;
+  std::cout << "\n=== Portfolio Summary (User " << tracked_user_id_
+            << ") ===" << '\n';
+  std::cout << "Tracked Orders: " << tracked_order_ids_.size() << '\n';
   std::cout << "Running Position: " << running_position_ << " contracts"
-            << std::endl;
+            << '\n';
   std::cout << "Current Market Price: $" << std::fixed << std::setprecision(2)
-            << (current_market_price_ / 100.0) << std::endl;
+            << (current_market_price_ / 100.0) << '\n';
   std::cout << "Average Cost: $" << std::fixed << std::setprecision(2)
-            << (average_cost_ / 100.0) << std::endl;
+            << (average_cost_ / 100.0) << '\n';
   std::cout << "Position Value: $" << std::fixed << std::setprecision(2)
             << ((current_market_price_ * std::abs(running_position_)) / 100.0)
-            << std::endl;
+            << '\n';
   std::cout << "Realized P&L: $" << std::fixed << std::setprecision(2)
-            << (realized_pnl_ / 100.0) << std::endl;
+            << (realized_pnl_ / 100.0) << '\n';
   std::cout << "Unrealized P&L: $" << std::fixed << std::setprecision(2)
-            << (CalculateUnrealizedPnL() / 100.0) << std::endl;
+            << (CalculateUnrealizedPnL() / 100.0) << '\n';
   std::cout << "Total P&L: $" << std::fixed << std::setprecision(2)
-            << (GetTotalPnL() / 100.0) << std::endl;
+            << (GetTotalPnL() / 100.0) << '\n';
 
   if (GetTotalCostBasis() != 0.0) {
     double return_pct = (GetTotalPnL() / GetTotalCostBasis()) * 100.0;
     std::cout << "Return on Equity: " << std::fixed << std::setprecision(2)
-              << return_pct << "%" << std::endl;
+              << return_pct << "%" << '\n';
   }
 
-  std::cout << "Total Trades: " << total_trades_ << std::endl;
+  std::cout << "Total Trades: " << total_trades_ << '\n';
 
   // Add risk metrics
   auto risk_metrics = CalculateRiskMetrics();
-  std::cout << "\n--- Risk Metrics ---" << std::endl;
+  std::cout << "\n--- Risk Metrics ---" << '\n';
   std::cout << "Max Position Value: $" << std::fixed << std::setprecision(2)
-            << (risk_metrics.max_position_value / 100.0) << std::endl;
+            << (risk_metrics.max_position_value / 100.0) << '\n';
   std::cout << "Volatility: " << std::fixed << std::setprecision(4)
-            << risk_metrics.volatility << std::endl;
+            << risk_metrics.volatility << '\n';
   std::cout << "Sharpe Ratio: " << std::fixed << std::setprecision(4)
-            << risk_metrics.sharpe_ratio << std::endl;
+            << risk_metrics.sharpe_ratio << '\n';
   std::cout << "Max Drawdown: $" << std::fixed << std::setprecision(2)
-            << (risk_metrics.max_drawdown / 100.0) << std::endl;
+            << (risk_metrics.max_drawdown / 100.0) << '\n';
   std::cout << "VaR 95%: " << std::fixed << std::setprecision(4)
-            << risk_metrics.var_95 << std::endl;
+            << risk_metrics.var_95 << '\n';
 
   // Add performance statistics
   auto perf_stats = GetPerformanceStats();
-  std::cout << "\n--- Performance Statistics ---" << std::endl;
+  std::cout << "\n--- Performance Statistics ---" << '\n';
   std::cout << "Win Rate: " << std::fixed << std::setprecision(2)
-            << (perf_stats.win_rate * 100.0) << "%" << std::endl;
-  std::cout << "Winning Trades: " << perf_stats.winning_trades << std::endl;
-  std::cout << "Losing Trades: " << perf_stats.losing_trades << std::endl;
+            << (perf_stats.win_rate * 100.0) << "%" << '\n';
+  std::cout << "Winning Trades: " << perf_stats.winning_trades << '\n';
+  std::cout << "Losing Trades: " << perf_stats.losing_trades << '\n';
   std::cout << "Average Win: $" << std::fixed << std::setprecision(2)
-            << (perf_stats.avg_win / 100.0) << std::endl;
+            << (perf_stats.avg_win / 100.0) << '\n';
   std::cout << "Average Loss: $" << std::fixed << std::setprecision(2)
-            << (perf_stats.avg_loss / 100.0) << std::endl;
+            << (perf_stats.avg_loss / 100.0) << '\n';
   std::cout << "Profit Factor: " << std::fixed << std::setprecision(2)
-            << perf_stats.profit_factor << std::endl;
+            << perf_stats.profit_factor << '\n';
   std::cout << "Largest Win: $" << std::fixed << std::setprecision(2)
-            << (perf_stats.largest_win / 100.0) << std::endl;
+            << (perf_stats.largest_win / 100.0) << '\n';
   std::cout << "Largest Loss: $" << std::fixed << std::setprecision(2)
-            << (perf_stats.largest_loss / 100.0) << std::endl;
+            << (perf_stats.largest_loss / 100.0) << '\n';
   if (csv_enabled_) {
     std::cout << "CSV Output: " << csv_filename_ << " (" << snapshots_.size()
-              << " snapshots)" << std::endl;
+              << " snapshots)" << '\n';
     if (periodic_snapshots_enabled_) {
       std::cout << "Periodic Snapshots: Enabled (interval: "
-                << (snapshot_interval_ns_ / 1000000) << "ms)" << std::endl;
+                << (snapshot_interval_ns_ / 1000000) << "ms)" << '\n';
     }
   }
 
   if (!tracked_order_ids_.empty()) {
-    std::cout << "\n--- Tracked Order IDs ---" << std::endl;
+    std::cout << "\n--- Tracked Order IDs ---" << '\n';
     for (uint64_t order_id : tracked_order_ids_) {
       auto it = tracked_orders_.find(order_id);
       if (it != tracked_orders_.end()) {
@@ -180,12 +180,12 @@ void PortfolioManager::PrintPortfolioSummary() const {
                   << (order.is_buy ? "BUY" : "SELL") << " " << order.quantity
                   << " @ " << order.price
                   << " (remaining: " << order.remaining_quantity << ")"
-                  << std::endl;
+                  << '\n';
       }
     }
   }
 
-  std::cout << "=============================================" << std::endl;
+  std::cout << "=============================================" << '\n';
 }
 
 void PortfolioManager::EnableCSV(const std::string &filename) {
@@ -201,7 +201,7 @@ void PortfolioManager::EnableCSV(const std::string &filename) {
     if (csv_file_.is_open()) {
       csv_file_ << "# Portfolio Backtesting CSV Output\n";
       csv_file_ << "# Generated by PortfolioManager for user "
-                << TRACKED_USER_ID << "\n";
+                << tracked_user_id_ << "\n";
       csv_file_ << "# Columns:\n";
       csv_file_ << "#   timestamp: ISO 8601 timestamp "
                    "(YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ)\n";
@@ -226,11 +226,11 @@ void PortfolioManager::EnableCSV(const std::string &filename) {
 
       WriteCSVHeader();
       std::cout << "[PORTFOLIO] CSV logging enabled: " << csv_filename_
-                << std::endl;
+                << '\n';
     } else {
       csv_enabled_ = false;
       std::cout << "[PORTFOLIO] Failed to open CSV file: " << csv_filename_
-                << std::endl;
+                << '\n';
     }
   }
 }
@@ -240,7 +240,7 @@ void PortfolioManager::DisableCSV() {
     csv_file_.close();
   }
   csv_enabled_ = false;
-  std::cout << "[PORTFOLIO] CSV logging disabled" << std::endl;
+  std::cout << "[PORTFOLIO] CSV logging disabled" << '\n';
 }
 
 // Private helper methods
@@ -411,13 +411,13 @@ void PortfolioManager::EnablePeriodicSnapshots(uint64_t interval_ns) {
           .count();
 
   std::cout << "[PORTFOLIO] Periodic snapshots enabled (interval: "
-            << (interval_ns / 1000000) << "ms)" << std::endl;
+            << (interval_ns / 1000000) << "ms)" << '\n';
 }
 
 void PortfolioManager::DisablePeriodicSnapshots() {
   periodic_snapshots_enabled_ = false;
   snapshot_interval_ns_ = 0;
-  std::cout << "[PORTFOLIO] Periodic snapshots disabled" << std::endl;
+  std::cout << "[PORTFOLIO] Periodic snapshots disabled" << '\n';
 }
 
 
@@ -434,8 +434,8 @@ void PortfolioManager::Reset() {
   last_snapshot_timestamp_ = 0;
   strategy_disabled_ = false;
 
-  std::cout << "[PORTFOLIO] Portfolio state reset for user " << TRACKED_USER_ID
-            << std::endl;
+  std::cout << "[PORTFOLIO] Portfolio state reset for user " << tracked_user_id_
+            << '\n';
 
   // Rewrite CSV header if CSV is enabled
   if (csv_enabled_ && csv_file_.is_open()) {
@@ -451,7 +451,7 @@ void PortfolioManager::OnOrderCancelled(uint64_t order_id) {
     tracked_orders_.erase(order_id);
 
     std::cout << "[PORTFOLIO] Order " << order_id
-              << " cancelled and removed from tracking" << std::endl;
+              << " cancelled and removed from tracking" << '\n';
   }
 }
 
@@ -468,7 +468,7 @@ void PortfolioManager::OnOrderModified(uint64_t order_id, uint64_t new_quantity,
 
     std::cout << "[PORTFOLIO] Order " << order_id
               << " modified: " << old_quantity << "@" << old_price << " -> "
-              << new_quantity << "@" << new_price << std::endl;
+              << new_quantity << "@" << new_price << '\n';
   }
 }
 
@@ -491,7 +491,7 @@ void PortfolioManager::CheckStopLoss() {
 
     if (position_value > 0 && (unrealized_pnl / position_value) < -stop_loss_percentage_) {
         std::cout << "[PORTFOLIO] Stop-loss triggered! Unrealized PnL: " << unrealized_pnl
-                  << ", Position Value: " << position_value << std::endl;
+                  << ", Position Value: " << position_value << '\n';
         // This is a simplified implementation. A real implementation would
         // need to create and submit an order to close the position.
         // For now, we'll just disable the strategy.
@@ -506,7 +506,7 @@ void PortfolioManager::CheckDailyLossLimit() {
 
     if (realized_pnl_ < -max_daily_loss_) {
         std::cout << "[PORTFOLIO] Maximum daily loss limit reached! Realized PnL: "
-                  << realized_pnl_ << std::endl;
+                  << realized_pnl_ << '\n';
         strategy_disabled_ = true;
     }
 }
@@ -514,7 +514,7 @@ void PortfolioManager::CheckDailyLossLimit() {
 RiskMetrics PortfolioManager::CalculateRiskMetrics() const {
   RiskMetrics metrics{};
 
-  if (snapshots_.empty()) {
+  if (snapshots_.size() < 2) {
     return metrics;
   }
 
@@ -524,59 +524,59 @@ RiskMetrics PortfolioManager::CalculateRiskMetrics() const {
         std::max(metrics.max_position_value, pos_value);
   }
 
-  std::vector<double> pnl_series;
-  std::vector<double> returns;
+  if (metrics.max_position_value < 1e-6) {
+    return metrics; // Avoid division by zero if no position was ever taken
+  }
 
+  std::vector<double> returns;
+  for (size_t i = 1; i < snapshots_.size(); ++i) {
+    double pnl_change = snapshots_[i].total_pnl - snapshots_[i - 1].total_pnl;
+    double ret = pnl_change / metrics.max_position_value;
+    returns.push_back(ret);
+  }
+
+  if (!returns.empty()) {
+    double mean_return = 0.0;
+    for (double ret : returns) {
+      mean_return += ret;
+    }
+    mean_return /= returns.size();
+
+    double variance = 0.0;
+    for (double ret : returns) {
+      variance += (ret - mean_return) * (ret - mean_return);
+    }
+    variance /= (returns.size() > 1 ? returns.size() - 1 : 1); // Use sample stdev
+    metrics.volatility = std::sqrt(variance);
+
+    if (metrics.volatility > 1e-9) {
+      metrics.sharpe_ratio = mean_return / metrics.volatility;
+    }
+  }
+
+  std::vector<double> pnl_series;
+  pnl_series.reserve(snapshots_.size());
   for (const auto &snapshot : snapshots_) {
     pnl_series.push_back(snapshot.total_pnl);
   }
 
-  if (pnl_series.size() > 1) {
-    for (size_t i = 1; i < pnl_series.size(); ++i) {
-      if (std::abs(pnl_series[i - 1]) > 1e-6) {
-        double ret =
-            (pnl_series[i] - pnl_series[i - 1]) / std::abs(pnl_series[i - 1]);
-        returns.push_back(ret);
-      }
+  double peak_pnl = pnl_series[0];
+  double max_dd = 0.0;
+
+  for (double pnl : pnl_series) {
+    if (pnl > peak_pnl) {
+      peak_pnl = pnl;
     }
+    double drawdown = peak_pnl - pnl;
+    max_dd = std::max(max_dd, drawdown);
+  }
+  metrics.max_drawdown = max_dd;
 
-    if (!returns.empty()) {
-      double mean_return = 0.0;
-      for (double ret : returns) {
-        mean_return += ret;
-      }
-      mean_return /= returns.size();
-
-      double variance = 0.0;
-      for (double ret : returns) {
-        variance += (ret - mean_return) * (ret - mean_return);
-      }
-      variance /= returns.size();
-      metrics.volatility = std::sqrt(variance);
-
-      if (metrics.volatility > 1e-6) {
-        metrics.sharpe_ratio = mean_return / metrics.volatility;
-      }
-    }
-
-    double peak_pnl = pnl_series[0];
-    double max_dd = 0.0;
-
-    for (double pnl : pnl_series) {
-      if (pnl > peak_pnl) {
-        peak_pnl = pnl;
-      }
-      double drawdown = peak_pnl - pnl;
-      max_dd = std::max(max_dd, drawdown);
-    }
-    metrics.max_drawdown = max_dd;
-
-    if (returns.size() > 20) {
-      std::vector<double> sorted_returns = returns;
-      std::sort(sorted_returns.begin(), sorted_returns.end());
-      size_t var_index = static_cast<size_t>(0.05 * sorted_returns.size());
-      metrics.var_95 = sorted_returns[var_index];
-    }
+  if (returns.size() > 20) {
+    std::vector<double> sorted_returns = returns;
+    std::sort(sorted_returns.begin(), sorted_returns.end());
+    size_t var_index = static_cast<size_t>(0.05 * sorted_returns.size());
+    metrics.var_95 = sorted_returns[var_index];
   }
 
   return metrics;
@@ -586,14 +586,14 @@ bool PortfolioManager::ExportData(const std::string &format,
                                   const std::string &filename) const {
   if (format == "csv") {
     if (snapshots_.empty()) {
-      std::cout << "[PORTFOLIO] No data to export" << std::endl;
+      std::cout << "[PORTFOLIO] No data to export" << '\n';
       return false;
     }
 
     std::ofstream export_file(filename);
     if (!export_file.is_open()) {
       std::cout << "[PORTFOLIO] Failed to open export file: " << filename
-                << std::endl;
+                << '\n';
       return false;
     }
 
@@ -613,14 +613,14 @@ bool PortfolioManager::ExportData(const std::string &format,
     }
 
     export_file.close();
-    std::cout << "[PORTFOLIO] Data exported to: " << filename << std::endl;
+    std::cout << "[PORTFOLIO] Data exported to: " << filename << '\n';
     return true;
 
   } 
   
   
 
-  std::cout << "[PORTFOLIO] Unsupported export format: " << format << std::endl;
+  std::cout << "[PORTFOLIO] Unsupported export format: " << format << '\n';
   return false;
 }
 

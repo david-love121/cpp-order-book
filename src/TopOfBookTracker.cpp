@@ -33,7 +33,7 @@ TopOfBookTracker::TopOfBookTracker(const std::string& symbol, const std::string&
     if (!date_range.empty()) {
         std::cout << " (" << date_range << ")";
     }
-    std::cout << std::endl;
+    std::cout << '\n';
 }
 
 TopOfBookTracker::~TopOfBookTracker() {
@@ -71,10 +71,10 @@ void TopOfBookTracker::EnableCSV(const std::string& filename) {
             csv_file_ << "\n";
             
             WriteCSVHeader();
-            std::cout << "[TOB] CSV logging enabled: " << csv_filename_ << std::endl;
+            std::cout << "[TOB] CSV logging enabled: " << csv_filename_ << '\n';
         } else {
             csv_enabled_ = false;
-            std::cout << "[TOB] Failed to open CSV file: " << csv_filename_ << std::endl;
+            std::cout << "[TOB] Failed to open CSV file: " << csv_filename_ << '\n';
         }
     }
 }
@@ -84,7 +84,7 @@ void TopOfBookTracker::DisableCSV() {
         csv_file_.close();
     }
     csv_enabled_ = false;
-    std::cout << "[TOB] CSV logging disabled" << std::endl;
+    std::cout << "[TOB] CSV logging disabled" << '\n';
 }
 
 void TopOfBookTracker::WriteCSVHeader() {
@@ -141,7 +141,7 @@ void TopOfBookTracker::OnTopOfBookUpdate(uint64_t timestamp, const std::string& 
     // For historical data processing, don't fall back to current time
     // If timestamp is 0, skip this update or log a warning
     if (timestamp == 0) {
-        std::cerr << "[TOB] Warning: Received update with timestamp=0, skipping" << std::endl;
+        std::cerr << "[TOB] Warning: Received update with timestamp=0, skipping" << '\n';
         return;
     }
     
@@ -176,7 +176,7 @@ void TopOfBookTracker::UpdateSymbol(const std::string& symbol) {
             std::replace(new_filename.begin(), new_filename.end(), '/', '-');
             
             EnableCSV(new_filename);
-            std::cout << "[TOB] Updated symbol to " << symbol_ << ", CSV file: " << new_filename << std::endl;
+            std::cout << "[TOB] Updated symbol to " << symbol_ << ", CSV file: " << new_filename << '\n';
         }
     }
 }
