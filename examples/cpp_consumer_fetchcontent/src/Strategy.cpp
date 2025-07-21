@@ -1,6 +1,7 @@
 #include "IStrategy.h"
 #include "PortfolioManager.h"
 #include "TopOfBookTracker.h"
+#include "IndicatorLogger.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -128,6 +129,27 @@ StrategyAction Strategy::SignalToAction(double signal_value) {
       (signal_value > 0) ? StrategySignal::BUY : StrategySignal::SELL;
 
   return StrategyAction(signal, quantity, abs_signal);
+}
+
+std::vector<std::string> Strategy::GetIndicatorNames() const {
+    return indicator_names_;
+}
+
+std::vector<double> Strategy::GetIndicatorValues() const {
+    return indicator_values_;
+}
+
+void Strategy::SetLogger(std::shared_ptr<IndicatorLogger> logger) {
+    logger_ = logger;
+    if (logger_) {
+        logger_->WriteHeader(GetIndicatorNames());
+    }
+}
+
+void Strategy::LogIndicators(uint64_t timestamp) {
+    if (logger_) {
+        logger_->WriteRow(timestamp, GetIndicatorValues());
+    }
 }
 
 

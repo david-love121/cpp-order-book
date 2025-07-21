@@ -63,10 +63,10 @@ void PortfolioManager::OnTrade(const Trade &trade) {
       HandleShortPositionTrade(is_buy, trade_price, trade_quantity);
     }
   }
-
+  
   CheckStopLoss();
   CheckDailyLossLimit();
-
+  
   TakeSnapshot(trade.ts_executed);
 }
 

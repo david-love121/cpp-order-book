@@ -9,6 +9,7 @@
 // Forward declarations
 struct TOBSnapshot;
 class PortfolioManager;
+class IndicatorLogger;
 
 /**
  * @brief Price level data for L3 order book
@@ -148,6 +149,11 @@ public:
    */
   virtual void SetPortfolioManager(std::shared_ptr<PortfolioManager> portfolio_mgr) = 0;
 
+  // Indicator logging
+  virtual std::vector<std::string> GetIndicatorNames() const = 0;
+  virtual std::vector<double> GetIndicatorValues() const = 0;
+  virtual void SetLogger(std::shared_ptr<IndicatorLogger> logger) = 0;
+  virtual void LogIndicators(uint64_t timestamp) = 0;
 
 
   // Getters
@@ -175,7 +181,10 @@ protected:
   double risk_multiplier_;
   uint64_t max_position_;
 
-
+  // Indicator logging
+  std::shared_ptr<IndicatorLogger> logger_;
+  std::vector<std::string> indicator_names_;
+  std::vector<double> indicator_values_;
 
 public:
   /**
@@ -188,13 +197,19 @@ public:
   virtual ~Strategy() = default;
 
   // Pure virtual - must be implemented by derived classes
-  virtual StrategyAction ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot) = 0;
+  virtual StrategyAction ProcessOrderBookData(const OrderBookSnapshot &orderbook_snapshot) override = 0;
   virtual void ProcessTradeData(const Trade& trade) override;
 
   // Interface implementations
   virtual void Reset() override;
   virtual void SetEnabled(bool enabled) override;
   virtual void SetPortfolioManager(std::shared_ptr<PortfolioManager> portfolio_mgr) override;
+
+  // Indicator logging
+  virtual std::vector<std::string> GetIndicatorNames() const override;
+  virtual std::vector<double> GetIndicatorValues() const override;
+  virtual void SetLogger(std::shared_ptr<IndicatorLogger> logger) override;
+  virtual void LogIndicators(uint64_t timestamp) override;
 
 
   // Getters Setters

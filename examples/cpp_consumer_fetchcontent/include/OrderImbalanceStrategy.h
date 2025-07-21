@@ -82,6 +82,9 @@ public:
      */
     void Reset() override;
 
+    // Indicator reporting
+    std::vector<std::string> GetIndicatorNames() const override;
+    std::vector<double> GetIndicatorValues() const override;
 
     // Getters for strategy metrics
     double GetCurrentSignal() const { return current_signal_; }

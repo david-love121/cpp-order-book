@@ -36,6 +36,7 @@ add_executable(consumer_fetchcontent
     src/Strategy.cpp
     src/OrderImbalanceStrategy.cpp
     src/TopOfBookTracker.cpp
+    src/IndicatorLogger.cpp
 )
 
 # Add include directories

@@ -22,7 +22,10 @@ OrderImbalanceStrategy::OrderImbalanceStrategy(const std::string& name,
     , order_client_(nullptr)
     , auto_trading_enabled_(false)
     , last_order_time_(0)   // 15% minimum signal to trade
-{  
+{
+    indicator_names_ = {"l3_imbalance", "weighted_imbalance", "trade_volume_imbalance", "momentum_signal", "signal_strength"};
+    indicator_values_.resize(5, 0.0);
+
     // Set reasonable defaults for high-frequency trading
     SetSignalThreshold(0.05);  // Lower threshold for HFT
     SetBaseQuantity(1);       // Moderate base quantity
@@ -78,6 +81,14 @@ StrategyAction OrderImbalanceStrategy::ProcessOrderBookData(const OrderBookSnaps
     // Calculate signal strength
     double signal_strength = CalculateSignalStrength(combined_signal);
     double final_signal = momentum_signal;
+
+    // Update indicator values
+    indicator_values_[0] = l3_imbalance;
+    indicator_values_[1] = weighted_imbalance;
+    indicator_values_[2] = trade_volume_imbalance_;
+    indicator_values_[3] = momentum_signal;
+    indicator_values_[4] = signal_strength;
+
     StrategyAction action = SignalToAction(final_signal);
     action.confidence = signal_strength;
     // Execute auto-trading if enabled and signal is strong enough
@@ -439,4 +450,12 @@ void OrderImbalanceStrategy::ProcessTradeData(const Trade& trade) {
 
     // Decay the trade volume imbalance over time
     trade_volume_imbalance_ *= decay_factor_;
+}
+
+std::vector<std::string> OrderImbalanceStrategy::GetIndicatorNames() const {
+    return indicator_names_;
+}
+
+std::vector<double> OrderImbalanceStrategy::GetIndicatorValues() const {
+    return indicator_values_;
 }

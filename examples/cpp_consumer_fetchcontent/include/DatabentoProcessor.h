@@ -53,7 +53,7 @@ public:
      */
     DatabentoProcessor();
     
-
+    
 
     void SetOrderClient(std::shared_ptr<IClient> order_client);    
     /**

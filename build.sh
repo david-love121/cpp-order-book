@@ -140,7 +140,7 @@ cd "$BUILD_DIR"
 
 # Configure with CMake
 print_status "Configuring project with CMake..."
-CMAKE_ARGS="-DCMAKE_BUILD_TYPE=$BUILD_TYPE"
+CMAKE_ARGS="-DCMAKE_BUILD_TYPE=$BUILD_TYPE -DCMAKE_EXPORT_COMPILE_COMMANDS=1"
 
 if [ "$VERBOSE" = true ]; then
     CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_VERBOSE_MAKEFILE=ON"

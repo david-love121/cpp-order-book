@@ -24,6 +24,7 @@
 #include "OrderBookManager.h"
 #include "OrderImbalanceStrategy.h"
 #include "DatabentoProcessor.h"
+#include "IndicatorLogger.h"
 
 // Include Databento headers
 #include <databento/live.hpp>
@@ -222,6 +223,10 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
         manager->GetPortfolioManager()->SetMaxDailyLoss(max_daily_loss);
 
         manager->SetStrategy(order_imbalance_strategy);
+
+        // Create and set up the indicator logger
+        auto indicator_logger = std::make_shared<IndicatorLogger>("indicator_log.csv");
+        order_imbalance_strategy->SetLogger(indicator_logger);
         
         std::cout << "OrderBookManager and DatabentoProcessor started successfully" << std::endl;
         
@@ -243,13 +248,16 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
             };
             
             int record_count = 0;
-            auto record_callback = [&databento_processor, &record_count](const Record& record) -> KeepGoing {
+            auto record_callback = [&databento_processor, &record_count, &order_imbalance_strategy](const Record& record) -> KeepGoing {
                 record_count++;
                 if (record_count % 100 == 0) {
-                    std::cout << "Processing record #" << record_count 
+                    std::cout << "Processing record #" << record_count
                               << " (type: " << static_cast<int>(record.RType()) << ")" << std::endl;
                 }
                 KeepGoing result = databento_processor->ProcessMarketData(record);
+                if (record.RType() == RType::Mbo) {
+                    order_imbalance_strategy->LogIndicators(record.Get<MboMsg>().ts_recv.time_since_epoch().count());
+                }
                 
                 // Log first few records for debugging
                 if (record_count <= 5) {
@@ -303,13 +311,16 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
                 };
                 
                 int record_count = 0;
-                auto record_callback = [&databento_processor, &record_count](const Record& record) -> KeepGoing {
+                auto record_callback = [&databento_processor, &record_count, &order_imbalance_strategy](const Record& record) -> KeepGoing {
                     record_count++;
                     if (record_count % 100 == 0) {
-                        std::cout << "Processing record #" << record_count 
+                        std::cout << "Processing record #" << record_count
                                   << " (type: " << static_cast<int>(record.RType()) << ")" << std::endl;
                     }
                     KeepGoing result = databento_processor->ProcessMarketData(record);
+                    if (record.RType() == RType::Mbo) {
+                        order_imbalance_strategy->LogIndicators(record.Get<MboMsg>().ts_recv.time_since_epoch().count());
+                    }
                     
                     // Log first few records for debugging
                     if (record_count <= 5) {
