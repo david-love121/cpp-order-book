@@ -30,11 +30,11 @@ OrderImbalanceStrategy::OrderImbalanceStrategy(const std::string& name,
     SetSignalThreshold(0.05);  // Lower threshold for HFT
     SetBaseQuantity(1);       // Moderate base quantity
     SetMaxPosition(10);
-    
-    std::cout << "[STRATEGY] OrderImbalanceStrategy '" << name 
-              << "' initialized for user " << user_id 
+
+    std::cout << "[STRATEGY] OrderImbalanceStrategy '" << name
+              << "' initialized for user " << user_id
               << " with threshold=" << imbalance_threshold_
-              << ", window=" << lookback_window_ << std::endl;
+              << ", window=" << lookback_window_ << '\n';
 }
 
 
@@ -43,9 +43,9 @@ StrategyAction OrderImbalanceStrategy::ProcessOrderBookData(const OrderBookSnaps
     total_calls++;
     
     if (total_calls <= 5 || total_calls % 1000 == 0) {
-        std::cout << "[STRATEGY-L3] ProcessOrderBookData called #" << total_calls 
-                  << " for symbol=" << orderbook_snapshot.symbol 
-                  << ", enabled=" << IsEnabled() << std::endl;
+        std::cout << "[STRATEGY-L3] ProcessOrderBookData called #" << total_calls
+                  << " for symbol=" << orderbook_snapshot.symbol
+                  << ", enabled=" << IsEnabled() << '\n';
     }
     
     if (!IsEnabled() || (portfolio_manager_ && portfolio_manager_->IsStrategyDisabled())) {
@@ -102,15 +102,15 @@ StrategyAction OrderImbalanceStrategy::ProcessOrderBookData(const OrderBookSnaps
     
     // Log significant L3 signals
     if (std::abs(final_signal) > GetSignalThreshold()) {
-        std::cout << "[STRATEGY-L3] L3 signal=" << final_signal 
+        std::cout << "[STRATEGY-L3] L3 signal=" << final_signal
                   << ", l3_imbalance=" << l3_imbalance
                   << ", weighted=" << weighted_imbalance
                   << ", levels=" << orderbook_snapshot.bid_levels.size() + orderbook_snapshot.ask_levels.size()
-                  << ", action=" << (action.signal == StrategySignal::BUY ? "BUY" : 
-                                   action.signal == StrategySignal::SELL ? "SELL" : "HOLD")
+                  << ", action=" << (action.signal == StrategySignal::BUY ? "BUY" : action.signal == StrategySignal::SELL ? "SELL"
+                                                                                                                          : "HOLD")
                   << ", qty=" << action.quantity
                   << ", confidence=" << action.confidence
-                  << ", auto_trade=" << (order_placed ? "YES" : "NO") << std::endl;
+                  << ", auto_trade=" << (order_placed ? "YES" : "NO") << '\n';
     }
     
     return action;
@@ -132,8 +132,8 @@ void OrderImbalanceStrategy::Reset() {
     // Reset auto-trading state
     last_order_time_ = 0;
     recent_order_times_.clear();
-    
-    std::cout << "[STRATEGY] OrderImbalanceStrategy reset" << std::endl;
+
+    std::cout << "[STRATEGY] OrderImbalanceStrategy reset" << '\n';
 }
 
 
@@ -235,11 +235,11 @@ bool OrderImbalanceStrategy::ExecuteAutoTrade(double signal, const OrderBookSnap
     //Determine if we can trade without reaching max
     int64_t new_quantity = current_positions + quantity;
     if (signal > 0.0 && new_quantity > static_cast<int64_t>(GetMaxPosition())) {
-        std::cout << "[AUTO-TRADE] Cannot place BUY order, would exceed max position limit." << std::endl;
+        std::cout << "[AUTO-TRADE] Cannot place BUY order, would exceed max position limit." << '\n';
         return false;
     }
     if (signal < 0.0 && new_quantity < -static_cast<int64_t>(GetMaxPosition())) {
-        std::cout << "[AUTO-TRADE] Cannot place SELL order, would exceed max position limit." << std::endl;
+        std::cout << "[AUTO-TRADE] Cannot place SELL order, would exceed max position limit." << '\n';
         return false;
     }
 
@@ -248,9 +248,7 @@ bool OrderImbalanceStrategy::ExecuteAutoTrade(double signal, const OrderBookSnap
     }
     
     // Place the order
-    uint64_t synthetic_databento_id = 0;  // Use 0 for strategy-generated orders
-
-    uint64_t order_id = order_client_->SubmitOrder(synthetic_databento_id, GetUserId(), is_buy, quantity_unsigned, price, orderbook_snapshot.timestamp, orderbook_snapshot.timestamp);
+    uint64_t order_id = order_client_->SubmitOrder(GetUserId(), is_buy, quantity_unsigned, price, orderbook_snapshot.timestamp, orderbook_snapshot.timestamp);
 
     if (order_id > 0) {
         // Record successful order placement
@@ -262,11 +260,11 @@ bool OrderImbalanceStrategy::ExecuteAutoTrade(double signal, const OrderBookSnap
         while (!recent_order_times_.empty() && recent_order_times_.front() < one_minute_ago) {
             recent_order_times_.pop_front();
         }
-        
-        std::cout << "[AUTO-TRADE] Placed " << (is_buy ? "BUY" : "SELL") 
-                  << " order " << order_id << ": " << quantity << " @ " 
-                  << (price / 100.0) << " (signal=" << signal << ")" << std::endl;
-        
+
+        std::cout << "[AUTO-TRADE] Placed " << (is_buy ? "BUY" : "SELL")
+                  << " order " << order_id << ": " << quantity << " @ "
+                  << (price / 100.0) << " (signal=" << signal << ")" << '\n';
+
         return true;
     }
     

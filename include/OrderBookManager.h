@@ -62,7 +62,7 @@ public:
     uint64_t GetTotalAskVolume() const override;
     uint64_t GetSpread() const override;
     uint64_t GetMidPrice() const override;
-    uint64_t SubmitOrder(uint64_t databento_order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+    uint64_t SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price,
                                 uint64_t ts_received, uint64_t ts_executed) override;
     void CancelOrder(uint64_t order_id) override;
     void ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t new_price, uint64_t new_ts_received, uint64_t new_ts_executed) override;

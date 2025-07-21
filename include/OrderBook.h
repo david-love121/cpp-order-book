@@ -25,7 +25,7 @@ public:
     OrderBook& operator=(OrderBook&&) = delete;
     
     // Public API for users
-    uint64_t AddOrder(uint64_t databento_order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+    uint64_t AddOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price,
                       uint64_t ts_received, uint64_t ts_executed);
     void CancelOrder(uint64_t order_id);
     
@@ -49,7 +49,7 @@ public:
 
 private:
     // The core hybrid data structure
-    std::unordered_map<uint64_t, Order*> order_map_;
+    std::unordered_map<uint64_t, Order*> order_map_; // Internal ID -> Order
     // Price + PriceLevel obejct
     std::map<uint64_t, PriceLevel, std::greater<uint64_t>> bids_;
     std::map<uint64_t, PriceLevel, std::less<uint64_t>> asks_;

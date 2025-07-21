@@ -36,9 +36,9 @@ public:
      * @param price Order price in ticks
      * @param ts_received Timestamp when order was received (nanoseconds)
      * @param ts_executed Timestamp when order should be executed (nanoseconds)
-     * @return Order ID assigned to the new order
+     * @return Internal Order ID assigned to the new order
      */
-    virtual uint64_t SubmitOrder(uint64_t databento_order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+    virtual uint64_t SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price,
                                 uint64_t ts_received, uint64_t ts_executed) = 0;
 
 

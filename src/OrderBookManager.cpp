@@ -20,8 +20,8 @@ void OrderBookManager::InitializeAfterConstruction() {
     // Register ourselves as a client of the order book now that shared_ptr is available
     if (order_book_) {
         try {
-            order_book_->RegisterClient(shared_from_this());     
-            std::cout << "[OrderBookManager] Successfully registered as order book client" << std::endl;
+            order_book_->RegisterClient(shared_from_this());
+            std::cout << "[OrderBookManager] Successfully registered as order book client" << '\n';
         } catch (const std::exception& e) {
             std::cerr << "[OrderBookManager] Error registering as client: " << e.what() << std::endl;
         }
@@ -53,14 +53,14 @@ OrderBookSnapshot OrderBookManager::GetOrderBookSnapshot() const {
 
 // IClient Interface Implementation
 
-uint64_t OrderBookManager::SubmitOrder(uint64_t databento_order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+uint64_t OrderBookManager::SubmitOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price,
                                 uint64_t ts_received, uint64_t ts_executed) {
     if (!order_book_) {
         std::cerr << "[OrderBookManager] Cannot submit order - order book not initialized" << std::endl;
         return 0;
     }
     
-    uint64_t internal_order_id = order_book_->AddOrder(databento_order_id, user_id, is_buy, quantity, price, ts_received, ts_executed);
+    uint64_t internal_order_id = order_book_->AddOrder(user_id, is_buy, quantity, price, ts_received, ts_executed);
     portfolio_manager_->OnOrderSubmitted(internal_order_id, user_id, is_buy, quantity, price, ts_received);
     std::cout << "[OrderBookManager] Submitting ID " << internal_order_id << " order for user " << user_id 
               << ": " << (is_buy ? "BUY" : "SELL") << " " << quantity 

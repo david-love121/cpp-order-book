@@ -1,26 +1,20 @@
 #include <iostream>
 #include <vector>
-#include <iomanip>
+
 #include <chrono>
 #include <thread>
-#include <random>
-#include <atomic>
-#include <map>
-#include <unordered_map>
+
+
 #include <memory>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
-#include <sstream>
+
 
 // Include the OrderBook headers
-#include "OrderBook.h"
-#include "Trade.h"
-#include "PriceLevel.h"
-#include "Order.h"
-#include "IClient.h"
+
 #include "DatabentoCache.h"
-#include "PortfolioManager.h"
+
 #include "OrderBookManager.h"
 #include "OrderImbalanceStrategy.h"
 #include "DatabentoProcessor.h"
@@ -41,7 +35,7 @@ void loadEnvFile(const std::string& filename = ".env") {
         filename,                                           // Current working directory
         "../" + filename,                                   // Parent directory (for build/)
         "../../" + filename,                               // For nested build directories
-        std::string(__FILE__).substr(0, std::string(__FILE__).find_last_of("/")) + "/../" + filename  // Relative to source file
+        std::string(__FILE__).substr(0, std::string(__FILE__).find_last_of('/')) + "/../" + filename  // Relative to source file
     };
     
     std::ifstream file;
@@ -51,15 +45,15 @@ void loadEnvFile(const std::string& filename = ".env") {
         file.open(path);
         if (file.is_open()) {
             found_path = path;
-            std::cout << "[ENV] Found .env file at: " << path << std::endl;
+            std::cout << "[ENV] Found .env file at: " << path << '\n';
             break;
         }
     }
     
     if (!file.is_open()) {
-        std::cout << "[ENV] .env file not found in any of these locations:" << std::endl;
+        std::cout << "[ENV] .env file not found in any of these locations:" << '\n';
         for (const auto& path : search_paths) {
-            std::cout << "[ENV]   " << path << std::endl;
+            std::cout << "[ENV]   " << path << '\n';
         }
         return;
     }
@@ -84,20 +78,21 @@ void loadEnvFile(const std::string& filename = ".env") {
         
         // Set environment variable
         if (setenv(key.c_str(), value.c_str(), 1) == 0) {
-            std::cout << "[ENV] Loaded: " << key << std::endl;
+            std::cout << "[ENV] Loaded: " << key << '\n';
         }
     }
+    int x = 2;
     file.close();
 }
 
 void runLiveDataDemo() {
-    std::cout << "\n=== Live Market Data Demo ===" << std::endl;
-    std::cout << "This demo requires a valid DATABENTO_API_KEY environment variable." << std::endl;
+    std::cout << "\n=== Live Market Data Demo ===" << '\n';
+    std::cout << "This demo requires a valid DATABENTO_API_KEY environment variable." << '\n';
     
     // Check if API key is available
     const char* api_key = std::getenv("DATABENTO_API_KEY");
     if (!api_key || strlen(api_key) == 0) {
-        std::cout << "No DATABENTO_API_KEY found. Skipping live data demo." << std::endl;
+        std::cout << "No DATABENTO_API_KEY found. Skipping live data demo." << '\n';
         return;
     }
     
@@ -121,7 +116,7 @@ void runLiveDataDemo() {
             return databento_processor->ProcessMarketData(rec);
         };
         
-        std::cout << "Starting live data stream for ES futures..." << std::endl;
+        std::cout << "Starting live data stream for ES futures..." << '\n';
         
         // Subscribe to MBO (Market By Order) data for full order book reconstruction
         client.Subscribe({"ES.FUT"}, Schema::Mbo, SType::Parent);
@@ -139,10 +134,10 @@ void runLiveDataDemo() {
         
 
         manager->Stop();
-        std::cout << "Live data demo completed." << std::endl;
+        std::cout << "Live data demo completed." << '\n';
         
     } catch (const std::exception& e) {
-        std::cout << "Live data demo error: " << e.what() << std::endl;
+        std::cout << "Live data demo error: " << e.what() << '\n';
     }
 }
 
@@ -150,16 +145,16 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
                            double momentum_factor, double decay_factor,
                            double min_signal_for_trade, double stop_loss,
                            double max_daily_loss) {
-    std::cout << "\n=== Historical MBO Data Demo for ES Futures ===" << std::endl;
+    std::cout << "\n=== Historical MBO Data Demo for ES Futures ===" << '\n';
     
     // Check if API key is available
     const char* api_key = std::getenv("DATABENTO_API_KEY");
     bool has_api_key = (api_key && strlen(api_key) > 0);
     
     if (!has_api_key) {
-        std::cout << "No DATABENTO_API_KEY found. Will use cached data only." << std::endl;
+        std::cout << "No DATABENTO_API_KEY found. Will use cached data only." << '\n';
     } else {
-        std::cout << "API key found. Will use cached data or fetch if needed." << std::endl;
+        std::cout << "API key found. Will use cached data or fetch if needed." << '\n';
     }
     
     try {
@@ -177,13 +172,13 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
         std::string cache_key = cache.generateCacheKey(dataset, start_time, end_time, symbols, schema);
         std::string cache_file_path = cache.getCacheFilePath(cache_key);
         
-        std::cout << "Cache key: " << cache_key << std::endl;
-        std::cout << "Cache file: " << cache_file_path << std::endl;
+        std::cout << "Cache key: " << cache_key << '\n';
+        std::cout << "Cache file: " << cache_file_path << '\n';
         cache.listCache();
         
-        // Initialize with 2ms slippage for historical data simulation, tracking user 1000
-        uint64_t tracked_user_id = 1000;
-        auto manager = std::make_shared<OrderBookManager>(tracked_user_id);  // 2ms slippage delay, user 1000
+        // Initialize with 2ms slippage for historical data simulation
+        const uint64_t STRATEGY_USER_ID = 9999;
+        auto manager = std::make_shared<OrderBookManager>(STRATEGY_USER_ID);  // Track the strategy's user ID
 
         // Create and configure Databento processor
    
@@ -193,17 +188,17 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
         // Initialize the manager after shared_ptr is fully constructed
         manager->InitializeAfterConstruction();
         
-        std::cout << "Fetching historical MBO data for ES S&P 500 futures..." << std::endl;
-        std::cout << "Dataset: GLBX.MDP3 (CME Globex)" << std::endl;
-        std::cout << "Schema: MBO (Market By Order) - Full order book depth" << std::endl;
-        std::cout << "Symbol: ESU4 (E-mini S&P 500 futures December 2024)" << std::endl;
-        std::cout << "Time range: " << start_time << " to " << end_time << " (UTC)" << std::endl;
+        std::cout << "Fetching historical MBO data for ES S&P 500 futures..." << '\n';
+        std::cout << "Dataset: GLBX.MDP3 (CME Globex)" << '\n';
+        std::cout << "Schema: MBO (Market By Order) - Full order book depth" << '\n';
+        std::cout << "Symbol: ESU4 (E-mini S&P 500 futures December 2024)" << '\n';
+        std::cout << "Time range: " << start_time << " to " << end_time << " (UTC)" << '\n';
         
         // Set up OrderImbalanceStrategy for historical data analysis
-        std::cout << "\n=== Setting up OrderImbalanceStrategy for Historical Analysis ===" << std::endl;
+        std::cout << "\n=== Setting up OrderImbalanceStrategy for Historical Analysis ===" << '\n';
         auto order_imbalance_strategy = std::make_shared<OrderImbalanceStrategy>(
             "Historical_OrderImbalance",
-            tracked_user_id,
+            STRATEGY_USER_ID,
             imbalance_threshold,
             lookback_window
         );
@@ -228,23 +223,23 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
         auto indicator_logger = std::make_shared<IndicatorLogger>("indicator_log.csv");
         order_imbalance_strategy->SetLogger(indicator_logger);
         
-        std::cout << "OrderBookManager and DatabentoProcessor started successfully" << std::endl;
+        std::cout << "OrderBookManager and DatabentoProcessor started successfully" << '\n';
         
         // Check if we have cached data
         if (cache.hasCachedData(cache_key)) { // Historical data never expires
-            std::cout << "\n[CACHE] Loading data from cache file..." << std::endl;
+            std::cout << "\n[CACHE] Loading data from cache file..." << '\n';
             
             // Load DBN file directly from cache
             DbnFileStore dbn_store{cache_file_path};
-            std::cout << "[CACHE] Successfully loaded cached DBN file" << std::endl;
+            std::cout << "[CACHE] Successfully loaded cached DBN file" << '\n';
             
             // Process the data from the DBN store
-            std::cout << "Processing MBO messages..." << std::endl;
+            std::cout << "Processing MBO messages..." << '\n';
             
             auto metadata_callback = [](const Metadata& metadata) {
                 (void)metadata; // Suppress unused parameter warning
-                std::cout << "Symbol metadata loaded for ES futures." << std::endl;
-                std::cout << "Metadata loaded successfully." << std::endl;
+                std::cout << "Symbol metadata loaded for ES futures." << '\n';
+                std::cout << "Metadata loaded successfully." << '\n';
             };
             
             int record_count = 0;
@@ -252,7 +247,7 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
                 record_count++;
                 if (record_count % 100 == 0) {
                     std::cout << "Processing record #" << record_count
-                              << " (type: " << static_cast<int>(record.RType()) << ")" << std::endl;
+                              << " (type: " << static_cast<int>(record.RType()) << ")" << '\n';
                 }
                 KeepGoing result = databento_processor->ProcessMarketData(record);
                 if (record.RType() == RType::Mbo) {
@@ -263,29 +258,29 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
                 if (record_count <= 5) {
                     std::cout << "Record #" << record_count 
                               << " - Type: " << static_cast<int>(record.RType())
-                              << " - Result: " << (result == KeepGoing::Continue ? "Continue" : "Stop") << std::endl;
+                              << " - Result: " << (result == KeepGoing::Continue ? "Continue" : "Stop") << '\n';
                 }
                 
                 return result;
             };
             
             // Replay the data
-            std::cout << "Starting replay of cached data..." << std::endl;
+            std::cout << "Starting replay of cached data..." << '\n';
             dbn_store.Replay(metadata_callback, record_callback);
-            std::cout << "Replay completed. Total records processed: " << record_count << std::endl;
+            std::cout << "Replay completed. Total records processed: " << record_count << '\n';
         } else {
             if (!has_api_key) {
-                std::cout << "\n[ERROR] No cached data found and no API key available." << std::endl;
-                std::cout << "Cannot fetch fresh data without API key." << std::endl;
-                std::cout << "Please either:" << std::endl;
-                std::cout << "1. Set DATABENTO_API_KEY environment variable" << std::endl;
-                std::cout << "2. Or run with an API key first to cache data" << std::endl;
+                std::cout << "\n[ERROR] No cached data found and no API key available." << '\n';
+                std::cout << "Cannot fetch fresh data without API key." << '\n';
+                std::cout << "Please either:" << '\n';
+                std::cout << "1. Set DATABENTO_API_KEY environment variable" << '\n';
+                std::cout << "2. Or run with an API key first to cache data" << '\n';
                 manager->Stop();
                 return;
             }
             
-            std::cout << "\n[API] Fetching fresh data from Databento API..." << std::endl;
-            std::cout << "This will process real order book messages and build a live order book simulation." << std::endl;
+            std::cout << "\n[API] Fetching fresh data from Databento API..." << '\n';
+            std::cout << "This will process real order book messages and build a live order book simulation." << '\n';
             
             try {
                 auto client = HistoricalBuilder{}.SetKeyFromEnv().Build();
@@ -299,15 +294,15 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
                     cache_file_path        // Save directly to cache file
                 );
                 
-                std::cout << "[API] Successfully fetched and cached data to: " << cache_file_path << std::endl;
+                std::cout << "[API] Successfully fetched and cached data to: " << cache_file_path << '\n';
                 
                 // Process the data from the DBN store
-                std::cout << "Processing MBO messages..." << std::endl;
+                std::cout << "Processing MBO messages..." << '\n';
                 
                 auto metadata_callback = [](const Metadata& metadata) {
                     (void)metadata; // Suppress unused parameter warning
-                    std::cout << "Symbol metadata loaded for ES futures." << std::endl;
-                    std::cout << "Metadata loaded successfully." << std::endl;
+                    std::cout << "Symbol metadata loaded for ES futures." << '\n';
+                    std::cout << "Metadata loaded successfully." << '\n';
                 };
                 
                 int record_count = 0;
@@ -315,7 +310,7 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
                     record_count++;
                     if (record_count % 100 == 0) {
                         std::cout << "Processing record #" << record_count
-                                  << " (type: " << static_cast<int>(record.RType()) << ")" << std::endl;
+                                  << " (type: " << static_cast<int>(record.RType()) << ")" << '\n';
                     }
                     KeepGoing result = databento_processor->ProcessMarketData(record);
                     if (record.RType() == RType::Mbo) {
@@ -326,46 +321,46 @@ void runHistoricalDataDemo(double imbalance_threshold, size_t lookback_window,
                     if (record_count <= 5) {
                         std::cout << "Record #" << record_count 
                                   << " - Type: " << static_cast<int>(record.RType())
-                                  << " - Result: " << (result == KeepGoing::Continue ? "Continue" : "Stop") << std::endl;
+                                  << " - Result: " << (result == KeepGoing::Continue ? "Continue" : "Stop") << '\n';
                     }
                     
                     return result;
                 };
                 
                 // Replay the data
-                std::cout << "Starting replay of API data..." << std::endl;
+                std::cout << "Starting replay of API data..." << '\n';
                 dbn_store.Replay(metadata_callback, record_callback);
-                std::cout << "Replay completed. Total records processed: " << record_count << std::endl;
+                std::cout << "Replay completed. Total records processed: " << record_count << '\n';
             } catch (const std::exception& e) {
-                std::cerr << "\n[ERROR] Databento API error: " << e.what() << std::endl;
+                std::cerr << "\n[ERROR] Databento API error: " << e.what() << '\n';
                 
                 if (std::string(e.what()).find("symbology") != std::string::npos || 
                     std::string(e.what()).find("422") != std::string::npos) {
-                    std::cout << "\n[INFO] Symbology error detected. This might be due to:" << std::endl;
-                    std::cout << "  - Expired futures contract (ESU4)" << std::endl;
-                    std::cout << "  - Dataset/symbol configuration issues" << std::endl;
-                    std::cout << "  - API key permissions" << std::endl;
-                    std::cout << "\n[SUGGESTION] Try using a more current futures contract or raw instrument IDs" << std::endl;
+                    std::cout << "\n[INFO] Symbology error detected. This might be due to:" << '\n';
+                    std::cout << "  - Expired futures contract (ESU4)" << '\n';
+                    std::cout << "  - Dataset/symbol configuration issues" << '\n';
+                    std::cout << "  - API key permissions" << '\n';
+                    std::cout << "\n[SUGGESTION] Try using a more current futures contract or raw instrument IDs" << '\n';
                 }
                 
-                std::cout << "\n[FALLBACK] Historical data demo skipped due to API error." << std::endl;
+                std::cout << "\n[FALLBACK] Historical data demo skipped due to API error." << '\n';
                 return;
             }
         }
 
         manager->GetPortfolioManager()->PrintPortfolioSummary();
         manager->Stop();
-        std::cout << "\n=== Historical MBO Data Demo Completed ===" << std::endl;
-        std::cout << "Processed real ES futures order book data from CME Globex." << std::endl;
+        std::cout << "\n=== Historical MBO Data Demo Completed ===" << '\n';
+        std::cout << "Processed real ES futures order book data from CME Globex." << '\n';
         
     } catch (const std::exception& e) {
-        std::cout << "Historical data demo error: " << e.what() << std::endl;
-        std::cout << "\nPossible causes:" << std::endl;
-        std::cout << "- Invalid API key or insufficient permissions" << std::endl;
-        std::cout << "- Date range outside available data (try a more recent date)" << std::endl;
-        std::cout << "- Network connectivity issues" << std::endl;
-        std::cout << "- API rate limits exceeded" << std::endl;
-        std::cout << "\nNote: MBO data requires appropriate subscription level." << std::endl;
+        std::cout << "Historical data demo error: " << e.what() << '\n';
+        std::cout << "\nPossible causes:" << '\n';
+        std::cout << "- Invalid API key or insufficient permissions" << '\n';
+        std::cout << "- Date range outside available data (try a more recent date)" << '\n';
+        std::cout << "- Network connectivity issues" << '\n';
+        std::cout << "- API rate limits exceeded" << '\n';
+        std::cout << "\nNote: MBO data requires appropriate subscription level." << '\n';
     }
 }
 
@@ -415,13 +410,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cout << "OrderBook + Databento MBO Integration Demo" << std::endl;
-    std::cout << "=========================================" << std::endl;
-    std::cout << "This example demonstrates:" << std::endl;
-    std::cout << "1. IClient interface implementation for order book operations" << std::endl;
-    std::cout << "2. DatabentoMboClient processing real Market By Order (MBO) data" << std::endl;
-    std::cout << "3. Integration with various market data feeds" << std::endl;
-    std::cout << "4. Proper encapsulation separating data processing from order book logic" << std::endl;
+    std::cout << "OrderBook + Databento MBO Integration Demo" << '\n';
+    std::cout << "=========================================" << '\n';
+    std::cout << "This example demonstrates:" << '\n';
+    std::cout << "1. IClient interface implementation for order book operations" << '\n';
+    std::cout << "2. DatabentoMboClient processing real Market By Order (MBO) data" << '\n';
+    std::cout << "3. Integration with various market data feeds" << '\n';
+    std::cout << "4. Proper encapsulation separating data processing from order book logic" << '\n';
     
     // Load environment variables from .env file
     loadEnvFile();
@@ -429,10 +424,10 @@ int main(int argc, char* argv[]) {
     // Check API key status
     const char* api_key = std::getenv("DATABENTO_API_KEY");
     if (api_key && strlen(api_key) > 0) {
-        std::cout << "\n[API-KEY] Found Databento API key (length: " << strlen(api_key) << ")" << std::endl;
+        std::cout << "\n[API-KEY] Found Databento API key (length: " << strlen(api_key) << ")" << '\n';
     } else {
-        std::cout << "\n[API-KEY] No Databento API key found" << std::endl;
-        std::cout << "Set DATABENTO_API_KEY environment variable to enable live data demos" << std::endl;
+        std::cout << "\n[API-KEY] No Databento API key found" << '\n';
+        std::cout << "Set DATABENTO_API_KEY environment variable to enable live data demos" << '\n';
     }
     
     

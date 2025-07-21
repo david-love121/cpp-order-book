@@ -3,7 +3,7 @@
 
 DatabentoProcessor::DatabentoProcessor()
     : current_symbol_("ESU4") {
-    std::cout << "[DatabentoProcessor] Initialized Databento market data processor" << std::endl;
+    std::cout << "[DatabentoProcessor] Initialized Databento market data processor" << '\n';
 }
 
 // Core interface implementation
@@ -72,17 +72,16 @@ KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo)
     try {
         switch (mbo.action) {
             case Action::Add: {
-                std::cout << "[MBO-ADD] " << current_symbol_ << " Order " << mbo.order_id 
-                          << " " << (mbo.side == Side::Bid ? "BUY" : "SELL") 
-                          << " " << mbo.size << "@" << (mbo.price / 1e9) << std::endl;
-                
+                std::cout << "[MBO-ADD] " << current_symbol_ << " Order " << mbo.order_id
+                          << " " << (mbo.side == Side::Bid ? "BUY" : "SELL")
+                          << " " << mbo.size << "@" << (mbo.price / 1e9) << '\n';
+
                 // Map Databento order ID to internal order ID
                 
                 
                 // Add order directly to OrderBook
                 uint64_t internal_order_id = order_client_->SubmitOrder(
-                    mbo.order_id,  // databento_order_id
-                    databento_user_id,
+                    mbo.order_id,  // Use databento_order_id as the user_id for historical data
                     mbo.side == Side::Bid,
                     mbo.size,
                     static_cast<uint64_t>(mbo.price / 1e7), // Convert to ticks
@@ -100,20 +99,20 @@ KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo)
                 break;
             }
             case Action::Cancel: {
-                std::cout << "[MBO-CANCEL] " << current_symbol_ << " Order " << mbo.order_id << " cancelled" << std::endl;
-                
+                std::cout << "[MBO-CANCEL] " << current_symbol_ << " Order " << mbo.order_id << " cancelled" << '\n';
+
                 uint64_t internal_order_id = GetInternalOrderId(mbo.order_id);
                 if (internal_order_id != 0) {
                     order_client_->CancelOrder(internal_order_id);
                 } else {
-                    std::cout << "[MBO-CANCEL-SKIP] Order " << mbo.order_id << " not found" << std::endl;
+                    std::cout << "[MBO-CANCEL-SKIP] Order " << mbo.order_id << " not found" << '\n';
                 }
                 break;
             }
             case Action::Modify: {
-                std::cout << "[MBO-MODIFY] " << current_symbol_ << " Order " << mbo.order_id 
-                          << " modified to " << mbo.size << "@" << (mbo.price / 1e9) << std::endl;
-                
+                std::cout << "[MBO-MODIFY] " << current_symbol_ << " Order " << mbo.order_id
+                          << " modified to " << mbo.size << "@" << (mbo.price / 1e9) << '\n';
+
                 uint64_t internal_order_id = GetInternalOrderId(mbo.order_id);
                 if (internal_order_id != 0) {
                     order_client_->ModifyOrder(
@@ -124,7 +123,7 @@ KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo)
                         ts_received
                     );
                 } else {
-                    std::cout << "[MBO-MODIFY-SKIP] Order " << mbo.order_id << " modify failed: Order ID not found" << std::endl;
+                    std::cout << "[MBO-MODIFY-SKIP] Order " << mbo.order_id << " modify failed: Order ID not found" << '\n';
                 }
                 break;
             }
@@ -133,7 +132,7 @@ KeepGoing DatabentoProcessor::ProcessMboMessage(const MboMsg &mbo)
                 break;
         }
     } catch (const std::exception& e) {
-        std::cout << "[MBO-ERROR] Failed to process MBO message: " << e.what() << std::endl;
+        std::cout << "[MBO-ERROR] Failed to process MBO message: " << e.what() << '\n';
     }
     
     return KeepGoing::Continue;
@@ -152,10 +151,10 @@ KeepGoing DatabentoProcessor::ProcessTradeMessage(const TradeMsg &trade) {
     
     // Update market state with current symbol and timestamp
     order_client_->UpdateMarketState(current_symbol_, ts_received);
-    
-    std::cout << "[TRADE] " << current_symbol_ << " " << trade.size << "@" << (trade.price / 1e9) 
-              << " side=" << (trade.side == Side::Bid ? "BUY" : "SELL") << std::endl;
-    
+
+    std::cout << "[TRADE] " << current_symbol_ << " " << trade.size << "@" << (trade.price / 1e9)
+              << " side=" << (trade.side == Side::Bid ? "BUY" : "SELL") << '\n';
+
     return KeepGoing::Continue;
 }
 
@@ -175,11 +174,11 @@ KeepGoing DatabentoProcessor::ProcessQuoteMessage(const Mbp1Msg &mbp1) {
     
     // Access the first level from the BidAskPair array
     const auto &level = mbp1.levels[0];
-    
-    std::cout << "[QUOTE] " << current_symbol_ 
+
+    std::cout << "[QUOTE] " << current_symbol_
               << " - Bid: " << (level.bid_px / 1e9) << " (" << level.bid_sz << ")"
-              << ", Ask: " << (level.ask_px / 1e9) << " (" << level.ask_sz << ")" << std::endl;
-    
+              << ", Ask: " << (level.ask_px / 1e9) << " (" << level.ask_sz << ")" << '\n';
+
     // L3 order book data is processed via MBO messages, quotes are just for informational logging
     
     return KeepGoing::Continue;

@@ -9,7 +9,7 @@
 
 
 // Timestamp-aware AddOrder that uses historical timestamps
-uint64_t OrderBook::AddOrder(uint64_t databento_order_id, uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price, 
+uint64_t OrderBook::AddOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price,
                             uint64_t ts_received, uint64_t ts_executed) {
     // 1. Generate internal order ID
     uint64_t internal_order_id = next_order_id_.fetch_add(1);
@@ -60,7 +60,6 @@ void OrderBook::CancelOrder(uint64_t order_id) {
     if (it == order_map_.end()) {
         NotifyOrderRejected(order_id, "Order ID not found");
         throw std::runtime_error("Order ID not found");
-        return;
     }
 
     Order* order_to_cancel = it->second;
@@ -69,12 +68,22 @@ void OrderBook::CancelOrder(uint64_t order_id) {
     // Check if order was already filled (parent_price_level would be null)
     if (order_to_cancel->parent_price_level != nullptr) {
         // O(1) removal from the PriceLevel's list
-        order_to_cancel->parent_price_level->RemoveOrder(order_to_cancel);
+        PriceLevel* price_level = order_to_cancel->parent_price_level;
+        price_level->RemoveOrder(order_to_cancel);
+    
+        // If the price level is now empty, remove it from the book
+        if (price_level->GetTotalVolume() == 0) {
+            if (order_to_cancel->is_buy_side) {
+                bids_.erase(order_to_cancel->price);
+            } else {
+                asks_.erase(order_to_cancel->price);
+            }
+        }
     }
-
+    
     // O(1) removal from the main map
     order_map_.erase(it);
-
+    
     // Release memory (back to the pool)
     delete order_to_cancel;
     
@@ -251,13 +260,12 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
         NotifyOrderRejected(order_id, "Modified order quantity must be greater than zero");
         throw std::invalid_argument("Modified order quantity must be greater than zero");
     }
-    
+
     // 2. Find the existing order
     auto it = order_map_.find(order_id);
     if (it == order_map_.end()) {
         NotifyOrderRejected(order_id, "Order ID not found");
-        //throw std::runtime_error("Order ID not found");
-        return;
+        throw std::runtime_error("Order ID not found");
     }
     
     Order* existing_order = it->second;
@@ -298,7 +306,7 @@ void OrderBook::ModifyOrder(uint64_t order_id, uint64_t new_quantity, uint64_t n
     // Delete the old order
     delete existing_order;
     
-
+    // Create a new order with the same internal ID but new properties
     Order* new_order = new Order{order_id, user_id, is_buy, new_quantity, new_price, new_ts_received, new_ts_executed};
     
     // Match against the book (this handles the matching logic properly)
@@ -331,7 +339,7 @@ OrderBook::~OrderBook() {
         try {
             client->Shutdown();
         } catch (const std::exception& e) {
-            std::cerr << "Error shutting down client " << client_id << ": " << e.what() << std::endl;
+            std::cerr << "Error shutting down client " << client_id << ": " << e.what() << '\n';
         }
     }
     clients_.clear();
@@ -369,7 +377,7 @@ void OrderBook::NotifyTradeExecuted(const Trade& trade) {
         try {
             client->OnTradeExecuted(trade);
         } catch (const std::exception& e) {
-            std::cerr << "Error notifying client " << client_id << " of trade: " << e.what() << std::endl;
+            std::cerr << "Error notifying client " << client_id << " of trade: " << e.what() << '\n';
         }
     }
 }
@@ -379,7 +387,7 @@ void OrderBook::NotifyOrderAcknowledged(uint64_t order_id) {
         try {
             client->OnOrderAcknowledged(order_id);
         } catch (const std::exception& e) {
-            std::cerr << "Error notifying client " << client_id << " of order ack: " << e.what() << std::endl;
+            std::cerr << "Error notifying client " << client_id << " of order ack: " << e.what() << '\n';
         }
     }
 }
@@ -389,7 +397,7 @@ void OrderBook::NotifyOrderCancelled(uint64_t order_id) {
         try {
             client->OnOrderCancelled(order_id);
         } catch (const std::exception& e) {
-            std::cerr << "Error notifying client " << client_id << " of order cancel: " << e.what() << std::endl;
+            std::cerr << "Error notifying client " << client_id << " of order cancel: " << e.what() << '\n';
         }
     }
 }
@@ -399,7 +407,7 @@ void OrderBook::NotifyOrderModified(uint64_t order_id, uint64_t new_quantity, ui
         try {
             client->OnOrderModified(order_id, new_quantity, new_price);
         } catch (const std::exception& e) {
-            std::cerr << "Error notifying client " << client_id << " of order modify: " << e.what() << std::endl;
+            std::cerr << "Error notifying client " << client_id << " of order modify: " << e.what() << '\n';
         }
     }
 }
@@ -409,7 +417,7 @@ void OrderBook::NotifyOrderRejected(uint64_t order_id, const std::string& reason
         try {
             client->OnOrderRejected(order_id, reason);
         } catch (const std::exception& e) {
-            std::cerr << "Error notifying client " << client_id << " of order rejection: " << e.what() << std::endl;
+            std::cerr << "Error notifying client " << client_id << " of order rejection: " << e.what() << '\n';
         }
     }
 }
@@ -419,7 +427,7 @@ void OrderBook::NotifyOrderFilled(uint64_t order_id) {
         try {
             client->OnOrderFilled(order_id);
         } catch (const std::exception& e) {
-            std::cerr << "Error notifying client " << client_id << " of order filled: " << e.what() << std::endl;
+            std::cerr << "Error notifying client " << client_id << " of order filled: " << e.what() << '\n';
         }
     }
 }
@@ -450,7 +458,7 @@ void OrderBook::NotifyTopOfBookUpdate() {
         try {
             client->OnTopOfBookUpdate(best_bid, best_ask, bid_volume, ask_volume);
         } catch (const std::exception& e) {
-            std::cerr << "Error notifying client " << client_id << " of TOB update: " << e.what() << std::endl;
+            std::cerr << "Error notifying client " << client_id << " of TOB update: " << e.what() << '\n';
         }
     }
 }
