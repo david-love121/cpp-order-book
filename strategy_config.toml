@@ -1,22 +1,60 @@
-strategy_name = "MovingAverageCrossover"
+strategy_name = "EMACrossoverRSI"
 
 [[indicators]]
-name = "sma_fast"
-type = "SMA"
+name = "ema_fast"
+type = "EMA"
 parameters = { period = 10, source = "mid_price" }
 
 [[indicators]]
-name = "sma_slow"
-type = "SMA"
-parameters = { period = 50, source = "mid_price" }
+name = "ema_slow"
+type = "EMA"
+parameters = { period = 30, source = "mid_price" }
+
+[[indicators]]
+name = "rsi"
+type = "RSI"
+parameters = { period = 14, source = "mid_price" }
 
 [[signals]]
-name = "buy_signal"
+name = "ema_cross_above"
 type = "CrossesAbove"
-indicator_a = "sma_fast"
-indicator_b = "sma_slow"
+indicator_a = "ema_fast"
+indicator_b = "ema_slow"
+
+[[signals]]
+name = "ema_cross_below"
+type = "CrossesBelow"
+indicator_a = "ema_fast"
+indicator_b = "ema_slow"
+
+[[signals]]
+name = "rsi_oversold"
+type = "BelowValue"
+indicator = "rsi"
+value = 30
+
+[[signals]]
+name = "rsi_overbought"
+type = "AboveValue"
+indicator = "rsi"
+value = 70
 
 [[rules]]
-signal = "buy_signal"
+signal = "ema_cross_above"
 action = "BUY"
+quantity = 1
+
+[[rules]]
+signal = "rsi_oversold"
+action = "BUY"
+quantity = 1
+
+[[rules]]
+signal = "ema_cross_below"
+action = "SELL"
+quantity = 1
+
+[[rules]]
+signal = "rsi_overbought"
+action = "SELL"
 quantity = 1

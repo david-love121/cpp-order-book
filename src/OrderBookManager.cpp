@@ -305,6 +305,10 @@ void OrderBookManager::RouteToTopOfBookTracker(uint64_t best_bid, uint64_t best_
 
 void OrderBookManager::NotifyStrategyOfOrderBookChange() {
     if (strategy_) {
+        // First, update indicators that require the full order book
+        strategy_->update(*order_book_);
+
+        // Then, update indicators that work with the snapshot
         OrderBookSnapshot l3_snapshot = GetOrderBookSnapshot();
         strategy_->update(l3_snapshot);
     }

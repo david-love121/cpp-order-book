@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 #include "Trade.h"
+#include "OrderBook.h"
 #include <toml++/toml.h>
 #include "IIndicator.h"
 #include <map>
@@ -21,7 +22,8 @@ class IStrategy {
 public:
     virtual ~IStrategy() = default;
 
-    virtual void update(const OrderBookSnapshot& order_book) = 0;
+    virtual void update(const OrderBook& order_book) = 0;
+    virtual void update(const OrderBookSnapshot& order_book_snapshot) = 0;
     virtual void update(const Trade& trade) = 0;
 
     virtual void from_toml(const toml::table& config) = 0;
@@ -35,7 +37,8 @@ class Strategy : public IStrategy {
 public:
     Strategy(const std::string& name);
 
-    void update(const OrderBookSnapshot& order_book) override;
+    void update(const OrderBook& order_book) override;
+    void update(const OrderBookSnapshot& order_book_snapshot) override;
     void update(const Trade& trade) override;
 
     void from_toml(const toml::table& config) override;

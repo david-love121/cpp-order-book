@@ -10,6 +10,14 @@
 #include "PortfolioManager.h"
 #include "IIndicator.h"
 #include "SMAIndicator.h"
+#include "EMAIndicator.h"
+#include "RSIIndicator.h"
+#include "BookImbalanceIndicator.h"
+#include "ISignal.h"
+#include "CrossesAboveSignal.h"
+#include "CrossesBelowSignal.h"
+#include "AboveValueSignal.h"
+#include "BelowValueSignal.h"
 #include "IStrategy.h"
 
 namespace py = pybind11;
@@ -37,8 +45,21 @@ PYBIND11_MODULE(cpp_order_book_engine, m) {
 
     py::class_<IStrategy, std::shared_ptr<IStrategy>>(m, "IStrategy");
 
+    py::class_<IIndicator, std::shared_ptr<IIndicator>>(m, "IIndicator");
+    py::class_<SMAIndicator, IIndicator, std::shared_ptr<SMAIndicator>>(m, "SMAIndicator");
+    py::class_<EMAIndicator, IIndicator, std::shared_ptr<EMAIndicator>>(m, "EMAIndicator");
+    py::class_<RSIIndicator, IIndicator, std::shared_ptr<RSIIndicator>>(m, "RSIIndicator");
+    py::class_<BookImbalanceIndicator, IIndicator, std::shared_ptr<BookImbalanceIndicator>>(m, "BookImbalanceIndicator");
+
+    py::class_<ISignal, std::shared_ptr<ISignal>>(m, "ISignal");
+    py::class_<CrossesAboveSignal, ISignal, std::shared_ptr<CrossesAboveSignal>>(m, "CrossesAboveSignal");
+    py::class_<CrossesBelowSignal, ISignal, std::shared_ptr<CrossesBelowSignal>>(m, "CrossesBelowSignal");
+    py::class_<AboveValueSignal, ISignal, std::shared_ptr<AboveValueSignal>>(m, "AboveValueSignal");
+    py::class_<BelowValueSignal, ISignal, std::shared_ptr<BelowValueSignal>>(m, "BelowValueSignal");
+
     py::class_<Strategy, IStrategy, std::shared_ptr<Strategy>>(m, "Strategy")
         .def(py::init<const std::string&>())
+        .def("update", static_cast<void (Strategy::*)(const OrderBook&)>(&Strategy::update))
         .def("update", static_cast<void (Strategy::*)(const OrderBookSnapshot&)>(&Strategy::update))
         .def("update", static_cast<void (Strategy::*)(const Trade&)>(&Strategy::update))
         .def("from_toml_string", [](Strategy& self, const std::string& toml_string) {

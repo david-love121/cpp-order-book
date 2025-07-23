@@ -1,6 +1,12 @@
 #include "IStrategy.h"
 #include "SMAIndicator.h"
+#include "EMAIndicator.h"
+#include "RSIIndicator.h"
+#include "BookImbalanceIndicator.h"
 #include "CrossesAboveSignal.h"
+#include "CrossesBelowSignal.h"
+#include "AboveValueSignal.h"
+#include "BelowValueSignal.h"
 #include "IClient.h"
 #include "OrderBookSnapshot.h"
 #include "Trade.h"
@@ -8,20 +14,32 @@
 
 Strategy::Strategy(const std::string& name) : m_name(name), m_order_client(nullptr) {}
 
-void Strategy::update(const OrderBookSnapshot& order_book) {
-    uint64_t mid_price = order_book.GetMidPrice();
+void Strategy::update(const OrderBook& order_book) {
+    for (auto& [name, indicator] : m_indicators) {
+        if (auto book_imbalance_indicator = std::dynamic_pointer_cast<BookImbalanceIndicator>(indicator)) {
+            book_imbalance_indicator->update(order_book);
+        }
+    }
+}
+
+void Strategy::update(const OrderBookSnapshot& order_book_snapshot) {
+    uint64_t mid_price = order_book_snapshot.GetMidPrice();
     if (mid_price > 0) {
         for (auto& [name, indicator] : m_indicators) {
-            indicator->update(mid_price);
+            // BookImbalanceIndicator is updated by the other update method
+            if (dynamic_cast<BookImbalanceIndicator*>(indicator.get()) == nullptr) {
+                indicator->update(mid_price);
+            }
         }
     }
 
     for (const auto& rule : m_rules) {
-        if (m_signals[rule.signal_name]->is_active()) {
+        auto it = m_signals.find(rule.signal_name);
+        if (it != m_signals.end() && it->second->is_active()) {
             if (rule.action == trading::Action::BUY) {
-                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, true, rule.quantity, order_book.GetBestAsk(), 0, 0);
+                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, true, rule.quantity, order_book_snapshot.GetBestAsk(), 0, 0);
             } else if (rule.action == trading::Action::SELL) {
-                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, false, rule.quantity, order_book.GetBestBid(), 0, 0);
+                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, false, rule.quantity, order_book_snapshot.GetBestBid(), 0, 0);
             }
         }
     }
@@ -44,6 +62,18 @@ void Strategy::from_toml(const toml::table& config) {
                 auto indicator = std::make_shared<SMAIndicator>(name);
                 indicator->configure(indicator_config);
                 m_indicators[name] = indicator;
+            } else if (type == "EMA") {
+                auto indicator = std::make_shared<EMAIndicator>();
+                indicator->configure(indicator_config);
+                m_indicators[name] = indicator;
+            } else if (type == "RSI") {
+                auto indicator = std::make_shared<RSIIndicator>();
+                indicator->configure(indicator_config);
+                m_indicators[name] = indicator;
+            } else if (type == "BookImbalance") {
+                auto indicator = std::make_shared<BookImbalanceIndicator>();
+                indicator->configure(indicator_config);
+                m_indicators[name] = indicator;
             }
         }
     }
@@ -58,6 +88,18 @@ void Strategy::from_toml(const toml::table& config) {
                 std::string indicator_a_name = signal_config["indicator_a"].value_or("");
                 std::string indicator_b_name = signal_config["indicator_b"].value_or("");
                 m_signals[name] = std::make_shared<CrossesAboveSignal>(name, m_indicators[indicator_a_name], m_indicators[indicator_b_name]);
+            } else if (type == "CrossesBelow") {
+                std::string indicator_a_name = signal_config["indicator_a"].value_or("");
+                std::string indicator_b_name = signal_config["indicator_b"].value_or("");
+                m_signals[name] = std::make_shared<CrossesBelowSignal>(m_indicators[indicator_a_name], m_indicators[indicator_b_name]);
+            } else if (type == "AboveValue") {
+                std::string indicator_name = signal_config["indicator"].value_or("");
+                uint64_t value = signal_config["value"].value_or<uint64_t>(0);
+                m_signals[name] = std::make_shared<AboveValueSignal>(m_indicators[indicator_name], value);
+            } else if (type == "BelowValue") {
+                std::string indicator_name = signal_config["indicator"].value_or("");
+                uint64_t value = signal_config["value"].value_or<uint64_t>(0);
+                m_signals[name] = std::make_shared<BelowValueSignal>(m_indicators[indicator_name], value);
             }
         }
     }
