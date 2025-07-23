@@ -12,6 +12,7 @@
 // Timestamp-aware AddOrder that uses historical timestamps
 uint64_t OrderBook::AddOrder(uint64_t user_id, bool is_buy, uint64_t quantity, uint64_t price,
                             uint64_t ts_received, uint64_t ts_executed) {
+    last_timestamp_ = ts_received;
     // 1. Generate internal order ID
     uint64_t internal_order_id = next_order_id_.fetch_add(1);
     

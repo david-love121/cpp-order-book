@@ -11,6 +11,7 @@
 #include "OrderBookSnapshot.h"
 #include "Trade.h"
 #include "PortfolioManager.h"
+#include "IndicatorLogger.h"
 
 Strategy::Strategy(const std::string& name) : m_name(name), m_order_client(nullptr) {}
 
@@ -19,6 +20,13 @@ void Strategy::update(const OrderBook& order_book) {
         if (auto book_imbalance_indicator = std::dynamic_pointer_cast<BookImbalanceIndicator>(indicator)) {
             book_imbalance_indicator->update(order_book);
         }
+    }
+    if (m_indicator_logger) {
+        std::vector<double> values;
+        for (const auto& [name, indicator] : m_indicators) {
+            values.push_back(indicator->get_value());
+        }
+        m_indicator_logger->WriteRow(order_book.timestamp(), values);
     }
 }
 
@@ -125,9 +133,15 @@ toml::table Strategy::to_toml() const {
 void Strategy::set_order_client(IClient* client) {
     m_order_client = client;
 }
-
 void Strategy::set_portfolio_manager(std::shared_ptr<PortfolioManager> portfolio_manager) {
     m_portfolio_manager = portfolio_manager;
+    if (m_portfolio_manager) {
+        auto data_sink = m_portfolio_manager->GetDataSink();
+        m_indicator_logger = std::make_unique<IndicatorLogger>(data_sink);
+        std::vector<std::string> headers;
+        for (const auto& [name, indicator] : m_indicators) {
+            headers.push_back(name);
+        }
+        m_indicator_logger->WriteHeader(headers);
+    }
 }
-
-

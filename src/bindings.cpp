@@ -19,6 +19,9 @@
 #include "AboveValueSignal.h"
 #include "BelowValueSignal.h"
 #include "IStrategy.h"
+#include "InMemorySink.h"
+#include "TOBSnapshot.h"
+#include "PortfolioSnapshot.h"
 
 namespace py = pybind11;
 
@@ -74,6 +77,43 @@ PYBIND11_MODULE(cpp_order_book_engine, m) {
     py::class_<PortfolioManager, std::shared_ptr<PortfolioManager>>(m, "PortfolioManager")
         .def("get_trades", &PortfolioManager::GetTrades, py::return_value_policy::reference);
 
+  py::class_<PortfolioSnapshot>(m, "PortfolioSnapshot")
+      .def(py::init<uint64_t, int64_t, double, double, double, double, size_t>())
+      .def_readwrite("timestamp", &PortfolioSnapshot::timestamp)
+      .def_readwrite("position", &PortfolioSnapshot::position)
+      .def_readwrite("current_price", &PortfolioSnapshot::current_price)
+      .def_readwrite("average_cost", &PortfolioSnapshot::average_cost)
+      .def_readwrite("unrealized_pnl", &PortfolioSnapshot::unrealized_pnl)
+      .def_readwrite("realized_pnl", &PortfolioSnapshot::realized_pnl)
+      .def_readwrite("total_pnl", &PortfolioSnapshot::total_pnl)
+      .def_readwrite("total_trades", &PortfolioSnapshot::total_trades)
+      .def_readwrite("position_value", &PortfolioSnapshot::position_value);
+
+  py::class_<TOBSnapshot>(m, "TOBSnapshot")
+      .def(py::init<uint64_t, const std::string &, double, double, uint64_t,
+                    uint64_t>())
+      .def_readwrite("timestamp", &TOBSnapshot::timestamp)
+      .def_readwrite("symbol", &TOBSnapshot::symbol)
+      .def_readwrite("best_bid", &TOBSnapshot::best_bid)
+      .def_readwrite("best_ask", &TOBSnapshot::best_ask)
+      .def_readwrite("bid_volume", &TOBSnapshot::bid_volume)
+      .def_readwrite("ask_volume", &TOBSnapshot::ask_volume)
+      .def_readwrite("mid_price", &TOBSnapshot::mid_price)
+      .def_readwrite("spread", &TOBSnapshot::spread);
+
+  py::class_<IDataSink, std::shared_ptr<IDataSink>>(m, "IDataSink");
+  py::class_<IndicatorSnapshot>(m, "IndicatorSnapshot")
+      .def(py::init<>())
+      .def_readwrite("timestamp", &IndicatorSnapshot::timestamp)
+      .def_readwrite("headers", &IndicatorSnapshot::headers)
+      .def_readwrite("values", &IndicatorSnapshot::values);
+
+  py::class_<InMemorySink, IDataSink, std::shared_ptr<InMemorySink>>(m, "InMemorySink")
+      .def("get_portfolio_snapshots", &InMemorySink::GetPortfolioSnapshots, py::return_value_policy::reference)
+      .def("get_tob_snapshots", &InMemorySink::GetTobSnapshots, py::return_value_policy::reference)
+      .def("get_trades", &InMemorySink::GetTrades, py::return_value_policy::reference)
+      .def("get_indicator_snapshots", &InMemorySink::GetIndicatorSnapshots, py::return_value_policy::reference);
+
     py::class_<OrderBookManager, std::shared_ptr<OrderBookManager>>(m, "OrderBookManager")
         .def(py::init<uint64_t>(), py::arg("tracked_user_id") = 0)
         .def("set_strategy", &OrderBookManager::SetStrategy)
@@ -81,5 +121,8 @@ PYBIND11_MODULE(cpp_order_book_engine, m) {
         .def("stop", &OrderBookManager::Stop)
         .def("initialize_after_construction", &OrderBookManager::InitializeAfterConstruction)
         .def("run_historical_data_demo", &OrderBookManager::RunHistoricalDataDemo)
-        .def("get_portfolio_manager", &OrderBookManager::GetPortfolioManager);
+        .def("get_portfolio_manager", &OrderBookManager::GetPortfolioManager)
+        .def("get_data_sink", [](OrderBookManager &self) {
+            return std::dynamic_pointer_cast<InMemorySink>(self.GetDataSink());
+        });
 }

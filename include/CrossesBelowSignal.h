@@ -16,8 +16,8 @@ private:
     std::string m_name;
     std::shared_ptr<IIndicator> m_indicator_a;
     std::shared_ptr<IIndicator> m_indicator_b;
-    uint64_t m_previous_a_value;
-    uint64_t m_previous_b_value;
+    mutable double m_previous_a_value;
+    mutable double m_previous_b_value;
 };
 
 #endif // CROSSESBELOWSIGNAL_H

@@ -46,6 +46,7 @@ public:
     // L3 Order Book data access methods
     std::vector<std::pair<uint64_t, PriceLevel>> GetBidLevels(size_t max_levels = 20) const;
     std::vector<std::pair<uint64_t, PriceLevel>> GetAskLevels(size_t max_levels = 20) const;
+    uint64_t timestamp() const { return last_timestamp_; }
 
 private:
     // The core hybrid data structure
@@ -59,6 +60,7 @@ private:
     
     // Order ID generation
     std::atomic<uint64_t> next_order_id_;
+    uint64_t last_timestamp_ = 0;
     
     void AddRestingOrder(Order* order);
     void RemoveRestingOrder(Order* order);

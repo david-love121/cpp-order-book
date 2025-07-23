@@ -9,5 +9,5 @@ bool AboveValueSignal::is_active() const {
     if (!m_indicator->is_ready()) {
         return false;
     }
-    return m_indicator->value() > m_value;
+    return m_indicator->get_value() > m_value;
 }

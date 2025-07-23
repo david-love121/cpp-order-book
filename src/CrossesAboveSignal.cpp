@@ -8,8 +8,8 @@ bool CrossesAboveSignal::is_active() const {
         return false;
     }
 
-    uint64_t current_a = m_indicator_a->value();
-    uint64_t current_b = m_indicator_b->value();
+    double current_a = m_indicator_a->get_value();
+    double current_b = m_indicator_b->get_value();
 
     bool crossed = (m_previous_a <= m_previous_b) && (current_a > current_b);
 

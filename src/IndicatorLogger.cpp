@@ -1,35 +1,24 @@
 #include "IndicatorLogger.h"
+#include "IndicatorSnapshot.h"
 #include <iostream>
+#include <utility>
 
-IndicatorLogger::IndicatorLogger(const std::string& filename) {
-    file_.open(filename, std::ios::out | std::ios::trunc);
-    if (!file_.is_open()) {
-        std::cerr << "Error opening file: " << filename << '\n';
-    }
+IndicatorLogger::IndicatorLogger(std::shared_ptr<IDataSink> data_sink)
+    : data_sink_(std::move(data_sink)) {}
+
+IndicatorLogger::~IndicatorLogger() {}
+
+void IndicatorLogger::WriteHeader(const std::vector<std::string> &headers) {
+  headers_ = headers;
 }
 
-IndicatorLogger::~IndicatorLogger() {
-    if (file_.is_open()) {
-        file_.close();
-    }
-}
-
-void IndicatorLogger::WriteHeader(const std::vector<std::string>& headers) {
-    if (file_.is_open()) {
-        file_ << "timestamp";
-        for (const auto& header : headers) {
-            file_ << "," << header;
-        }
-        file_ << '\n';
-    }
-}
-
-void IndicatorLogger::WriteRow(uint64_t timestamp, const std::vector<double>& values) {
-    if (file_.is_open()) {
-        file_ << timestamp;
-        for (const auto& value : values) {
-            file_ << "," << value;
-        }
-        file_ << '\n';
-    }
+void IndicatorLogger::WriteRow(uint64_t timestamp,
+                               const std::vector<double> &values) {
+  if (data_sink_) {
+    IndicatorSnapshot snapshot;
+    snapshot.timestamp = timestamp;
+    snapshot.headers = headers_;
+    snapshot.values = values;
+    data_sink_->OnData(snapshot);
+  }
 }

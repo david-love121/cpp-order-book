@@ -12,9 +12,10 @@ OrderBookManager::OrderBookManager(uint64_t tracked_user_id)
 {
     // Initialize owned components
     order_book_ = std::make_shared<OrderBook>();
-    portfolio_manager_ = std::make_shared<PortfolioManager>(tracked_user_id_, "portfolio_" + std::to_string(tracked_user_id_) + ".csv");
-    tob_tracker_ = std::make_shared<TopOfBookTracker>();
-    tob_tracker_->EnableCSV("tob_" + std::to_string(tracked_user_id_) + ".csv");
+    data_sink_ = std::make_shared<InMemorySink>();
+    portfolio_manager_ =
+        std::make_shared<PortfolioManager>(tracked_user_id_, data_sink_);
+    tob_tracker_ = std::make_shared<TopOfBookTracker>("", data_sink_);
     //Registration of shared pointers back to this IClient are initialized after construction
 }
 

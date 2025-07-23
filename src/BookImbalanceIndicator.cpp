@@ -33,9 +33,8 @@ void BookImbalanceIndicator::update(uint64_t /*new_value*/) {
     // No-op
 }
 
-uint64_t BookImbalanceIndicator::value() const {
-    // Return imbalance as a percentage (e.g., 0.75 -> 75)
-    return static_cast<uint64_t>(m_imbalance * 100);
+double BookImbalanceIndicator::get_value() const {
+    return m_imbalance;
 }
 
 bool BookImbalanceIndicator::is_ready() const {

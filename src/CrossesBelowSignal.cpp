@@ -10,16 +10,14 @@ bool CrossesBelowSignal::is_active() const {
         return false;
     }
 
-    uint64_t current_a = m_indicator_a->value();
-    uint64_t current_b = m_indicator_b->value();
+    double current_a = m_indicator_a->get_value();
+    double current_b = m_indicator_b->get_value();
 
     bool was_above = m_previous_a_value > m_previous_b_value;
     bool is_below = current_a < current_b;
 
-    // Update previous values for the next check
-    // This is a bit of a hack, but it's the only way to do it without a non-const update method
-    const_cast<CrossesBelowSignal*>(this)->m_previous_a_value = current_a;
-    const_cast<CrossesBelowSignal*>(this)->m_previous_b_value = current_b;
+    m_previous_a_value = current_a;
+    m_previous_b_value = current_b;
 
     return was_above && is_below;
 }

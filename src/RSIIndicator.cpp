@@ -29,12 +29,16 @@ void RSIIndicator::update(uint64_t new_value) {
     }
 }
 
-uint64_t RSIIndicator::value() const {
+void RSIIndicator::update(const OrderBook& /*order_book*/) {
+    // Not used for this indicator
+}
+
+double RSIIndicator::get_value() const {
     if (m_avg_loss == 0) {
-        return 100;
+        return 100.0;
     }
     double rs = m_avg_gain / m_avg_loss;
-    return static_cast<uint64_t>(100.0 - (100.0 / (1.0 + rs)));
+    return 100.0 - (100.0 / (1.0 + rs));
 }
 
 bool RSIIndicator::is_ready() const {

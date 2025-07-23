@@ -10,6 +10,7 @@
 #include "PortfolioManager.h"
 #include "Trade.h"
 #include "Logger.h"
+#include "InMemorySink.h"
 
 // Include Databento headers for market data processing
 #include <databento/live.hpp>
@@ -36,6 +37,7 @@ private:
     std::shared_ptr<OrderBook> order_book_;
     std::shared_ptr<PortfolioManager> portfolio_manager_;
     std::shared_ptr<TopOfBookTracker> tob_tracker_;
+    std::shared_ptr<IDataSink> data_sink_;
     std::shared_ptr<IStrategy> strategy_;
     std::shared_ptr<DatabentoProcessor> data_processor_;
     
@@ -94,13 +96,11 @@ public:
     void Start();
     void Stop();
     
-
-    
-
     // Component access (for external configuration)
     std::shared_ptr<PortfolioManager> GetPortfolioManager() const;
     std::shared_ptr<TopOfBookTracker> GetTopOfBookTracker() const;
     std::shared_ptr<OrderBook> GetOrderBook() const;
+    std::shared_ptr<IDataSink> GetDataSink() { return data_sink_; }
     
     // Strategy management
     void SetStrategy(std::shared_ptr<IStrategy> strategy);
@@ -115,8 +115,6 @@ public:
     // Configuration
     uint64_t GetTrackedUserId() const;
     bool IsUserTracked(uint64_t user_id) const;
-
-
 
     
     // L3 Order Book data access

@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -11,8 +10,11 @@
 #include <unordered_set>
 #include <vector>
 
+#include "IDataSink.h"
+#include "PortfolioSnapshot.h"
+#include "Trade.h"
+
 // Forward declarations
-struct Trade;
 class IStrategy;
 
 
@@ -27,27 +29,6 @@ struct TrackedOrder {
   TrackedOrder(uint64_t id, bool buy, uint64_t qty, uint64_t px, uint64_t ts)
       : order_id(id), is_buy(buy), quantity(qty), remaining_quantity(qty),
         price(px), timestamp(ts) {}
-};
-
-struct PortfolioSnapshot {
-  uint64_t timestamp;
-  int64_t position;
-  double current_price;
-  double average_cost;
-  double unrealized_pnl;
-  double realized_pnl;
-  double total_pnl;
-  size_t total_trades;
-  double position_value;
-
-  PortfolioSnapshot(uint64_t ts, int64_t pos, double cur_price, double avg_cost,
-                    double unrealized, double realized, size_t trades)
-      : timestamp(ts), position(pos), current_price(cur_price),
-        average_cost(avg_cost), unrealized_pnl(unrealized),
-        realized_pnl(realized), total_pnl(realized + unrealized),
-        total_trades(trades),
-        position_value(cur_price * std::abs(pos)) {}
-
 };
 
 struct RiskMetrics {
@@ -73,7 +54,8 @@ class PortfolioManager : public std::enable_shared_from_this<PortfolioManager> {
 public:
   uint64_t tracked_user_id_;
 
-  explicit PortfolioManager(uint64_t tracked_user_id, const std::string &csv_filename = "");
+  explicit PortfolioManager(uint64_t tracked_user_id,
+                            std::shared_ptr<IDataSink> data_sink);
   ~PortfolioManager();
 
   // Order tracking methods
@@ -92,10 +74,6 @@ public:
   void ForceSnapshot(uint64_t timestamp = 0);
   void EnablePeriodicSnapshots(uint64_t interval_ns);
   void DisablePeriodicSnapshots();
-
-  // CSV output methods
-  void EnableCSV(const std::string &filename);
-  void DisableCSV();
 
   // Strategy integration
 
@@ -138,6 +116,7 @@ public:
   }
   const TrackedOrder *GetOrderDetails(uint64_t order_id) const;
   const std::vector<Trade>& GetTrades() const;
+  std::shared_ptr<IDataSink> GetDataSink() { return data_sink_; }
 
 private:
   // Core portfolio state
@@ -161,13 +140,8 @@ private:
   uint64_t snapshot_interval_ns_ = 1000000000; // 1 second default
   uint64_t last_snapshot_timestamp_ = 0;
 
-  // CSV output
-  std::string csv_filename_;
-  std::ofstream csv_file_;
-  bool csv_enabled_ = false;
-
-
-
+  // Data sink
+  std::shared_ptr<IDataSink> data_sink_;
 
   // Helper methods
   void CheckStopLoss();
@@ -177,8 +151,6 @@ private:
   void HandleShortPositionTrade(bool is_buy, double trade_price,
                                 int64_t trade_quantity);
   void TakeSnapshot(uint64_t timestamp = 0);
-  void WriteCSVHeader();
-  void WriteSnapshotToCSV(const PortfolioSnapshot &snapshot);
   std::string TimestampToString(uint64_t timestamp_ns) const;
   double CalculateUnrealizedPnL() const;
 };

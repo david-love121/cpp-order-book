@@ -10,7 +10,8 @@ public:
     SMAIndicator(const std::string& name);
 
     void update(uint64_t new_value) override;
-    uint64_t value() const override;
+    void update(const OrderBook& order_book) override;
+    double get_value() const override;
     bool is_ready() const override;
     void configure(const toml::table& config) override;
     const std::string& name() const override;

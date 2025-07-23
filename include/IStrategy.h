@@ -11,6 +11,7 @@
 #include "IIndicator.h"
 #include <map>
 #include "ISignal.h"
+#include "IndicatorLogger.h"
 
 // Forward declarations
 class PortfolioManager;
@@ -54,4 +55,5 @@ protected:
     std::map<std::string, std::shared_ptr<IIndicator>> m_indicators;
     std::map<std::string, std::shared_ptr<ISignal>> m_signals;
     std::vector<Rule> m_rules;
+    std::unique_ptr<IndicatorLogger> m_indicator_logger;
 };

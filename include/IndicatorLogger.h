@@ -1,18 +1,20 @@
 #pragma once
 
+#include "IDataSink.h"
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
-#include <fstream>
-#include <cstdint>
 
 class IndicatorLogger {
 public:
-    IndicatorLogger(const std::string& filename);
-    ~IndicatorLogger();
+  IndicatorLogger(std::shared_ptr<IDataSink> data_sink);
+  ~IndicatorLogger();
 
-    void WriteHeader(const std::vector<std::string>& headers);
-    void WriteRow(uint64_t timestamp, const std::vector<double>& values);
+  void WriteHeader(const std::vector<std::string> &headers);
+  void WriteRow(uint64_t timestamp, const std::vector<double> &values);
 
 private:
-    std::ofstream file_;
+  std::shared_ptr<IDataSink> data_sink_;
+  std::vector<std::string> headers_;
 };

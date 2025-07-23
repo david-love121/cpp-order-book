@@ -15,7 +15,11 @@ void SMAIndicator::update(uint64_t new_value) {
     }
 }
 
-uint64_t SMAIndicator::value() const {
+void SMAIndicator::update(const OrderBook& /*order_book*/) {
+    // Not used for this indicator
+}
+
+double SMAIndicator::get_value() const {
     return m_current_value;
 }
 

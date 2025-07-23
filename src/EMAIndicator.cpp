@@ -23,7 +23,11 @@ void EMAIndicator::update(uint64_t new_value) {
     }
 }
 
-uint64_t EMAIndicator::value() const {
+void EMAIndicator::update(const OrderBook& /*order_book*/) {
+    // Not used for this indicator
+}
+
+double EMAIndicator::get_value() const {
     return m_current_value;
 }
 
