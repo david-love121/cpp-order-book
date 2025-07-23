@@ -6,6 +6,7 @@ import matplotlib as matplotlib
 matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
+import numpy as np
 
 # Add the build directory to the Python path to find the compiled module
 build_dir = os.path.join(os.path.dirname(__file__), 'build')
@@ -26,7 +27,8 @@ def main():
     print(f"C++ engine output is being logged to: {log_file}")
 
     # 1. Instantiate the C++ engine components
-    manager = obe.OrderBookManager(tracked_user_id=9999)
+    # Note that a value of 100 for initial cash corresponds to 1 dollar
+    manager = obe.OrderBookManager(tracked_user_id=9999, max_leverage=2.0, initial_cash=10000000.0)
     strategy = obe.Strategy("MyMeanReversionStrategy")
 
     # 2. Configure the strategy from a TOML file
@@ -66,7 +68,7 @@ def main():
     print(f"Total trades executed: {len(trades)}")
     for trade in trades:
         print(f"  - {trade}")
-
+    #Note that values are printed in cents, not dollars
     # Convert to pandas DataFrames
     portfolio_df = pd.DataFrame([{
         'timestamp': pd.to_datetime(p.timestamp),
@@ -77,23 +79,45 @@ def main():
         'realized_pnl': p.realized_pnl,
         'total_pnl': p.total_pnl,
         'total_trades': p.total_trades,
-        'position_value': p.position_value
+        'position_value': p.position_value,
+        'cash_balance': p.cash_balance
     } for p in portfolio_snapshots])
     indicator_data = []
     for i in indicator_snapshots:
-        row = {'timestamp': i.timestamp}
+        row = {'timestamp': pd.to_datetime(i.timestamp)}
         for h, v in zip(i.headers, i.values):
             row[h] = v
         indicator_data.append(row)
     indicator_df = pd.DataFrame(indicator_data)
-
     # Plotting
-    plt.figure()
-    plt.plot(portfolio_df['timestamp'], portfolio_df['total_pnl'], label='Total PnL')
-    plt.xlabel('Timestamp')
-    plt.ylabel('Profit')
-    plt.title('Profit vs. Time')
-    plt.legend()
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True, figsize=(15, 12))
+
+    # Plot 1: Total PnL
+    ax1.plot(portfolio_df['timestamp'], portfolio_df['total_pnl'], label='Total PnL', color='blue')
+    ax1.set_ylabel('Total PnL (Cents)')
+    ax1.set_title('Portfolio PnL and Indicator Values Over Time')
+    ax1.legend()
+    ax1.grid(True)
+
+    # Plot 2: EMA Indicators
+    for column in ['ema_fast', 'ema_slow']:
+        if column in indicator_df.columns:
+            indicator_values = indicator_df[column].replace(0, np.nan)
+            ax2.plot(indicator_df['timestamp'], indicator_values, label=column)
+    ax2.set_ylabel('EMA Values')
+    ax2.legend()
+    ax2.grid(True)
+
+    # Plot 3: RSI Indicator
+    if 'rsi' in indicator_df.columns:
+        rsi_values = indicator_df['rsi'].replace(0, np.nan)
+        ax3.plot(indicator_df['timestamp'], rsi_values, label='RSI', color='green')
+        ax3.set_ylabel('RSI')
+        ax3.legend()
+        ax3.grid(True)
+
+    ax3.set_xlabel('Timestamp')
+    plt.tight_layout()
     plt.show()
 
 if __name__ == "__main__":

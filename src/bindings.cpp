@@ -62,9 +62,9 @@ PYBIND11_MODULE(cpp_order_book_engine, m) {
 
     py::class_<Strategy, IStrategy, std::shared_ptr<Strategy>>(m, "Strategy")
         .def(py::init<const std::string&>())
-        .def("update", static_cast<void (Strategy::*)(const OrderBook&)>(&Strategy::update))
-        .def("update", static_cast<void (Strategy::*)(const OrderBookSnapshot&)>(&Strategy::update))
-        .def("update", static_cast<void (Strategy::*)(const Trade&)>(&Strategy::update))
+        .def("update", py::overload_cast<const OrderBook&, uint64_t>(&Strategy::update))
+        .def("update", py::overload_cast<const OrderBookSnapshot&>(&Strategy::update))
+        .def("update", py::overload_cast<const Trade&>(&Strategy::update))
         .def("from_toml_string", [](Strategy& self, const std::string& toml_string) {
             self.from_toml(toml::parse(toml_string));
         })
@@ -78,7 +78,7 @@ PYBIND11_MODULE(cpp_order_book_engine, m) {
         .def("get_trades", &PortfolioManager::GetTrades, py::return_value_policy::reference);
 
   py::class_<PortfolioSnapshot>(m, "PortfolioSnapshot")
-      .def(py::init<uint64_t, int64_t, double, double, double, double, size_t>())
+      .def(py::init<uint64_t, int64_t, double, double, double, double, size_t, double>())
       .def_readwrite("timestamp", &PortfolioSnapshot::timestamp)
       .def_readwrite("position", &PortfolioSnapshot::position)
       .def_readwrite("current_price", &PortfolioSnapshot::current_price)
@@ -87,7 +87,8 @@ PYBIND11_MODULE(cpp_order_book_engine, m) {
       .def_readwrite("realized_pnl", &PortfolioSnapshot::realized_pnl)
       .def_readwrite("total_pnl", &PortfolioSnapshot::total_pnl)
       .def_readwrite("total_trades", &PortfolioSnapshot::total_trades)
-      .def_readwrite("position_value", &PortfolioSnapshot::position_value);
+      .def_readwrite("position_value", &PortfolioSnapshot::position_value)
+      .def_readwrite("cash_balance", &PortfolioSnapshot::cash_balance);
 
   py::class_<TOBSnapshot>(m, "TOBSnapshot")
       .def(py::init<uint64_t, const std::string &, double, double, uint64_t,
@@ -115,7 +116,7 @@ PYBIND11_MODULE(cpp_order_book_engine, m) {
       .def("get_indicator_snapshots", &InMemorySink::GetIndicatorSnapshots, py::return_value_policy::reference);
 
     py::class_<OrderBookManager, std::shared_ptr<OrderBookManager>>(m, "OrderBookManager")
-        .def(py::init<uint64_t>(), py::arg("tracked_user_id") = 0)
+        .def(py::init<uint64_t, double, double>(), py::arg("tracked_user_id") = 0, py::arg("max_leverage") = 1.0, py::arg("initial_cash") = 100000.0)
         .def("set_strategy", &OrderBookManager::SetStrategy)
         .def("start", &OrderBookManager::Start)
         .def("stop", &OrderBookManager::Stop)

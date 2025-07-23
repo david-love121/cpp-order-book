@@ -7,14 +7,15 @@
 #include "MeanReversionStrategy.h"
 #include <utility>
 
-OrderBookManager::OrderBookManager(uint64_t tracked_user_id)
-    : client_id_(1), client_name_("OrderBookManager"), tracked_user_id_(tracked_user_id)
+OrderBookManager::OrderBookManager(uint64_t tracked_user_id, double max_leverage, double initial_cash)
+    : client_id_(1), client_name_("OrderBookManager"), tracked_user_id_(tracked_user_id),
+      max_leverage_(max_leverage), initial_cash_(initial_cash)
 {
     // Initialize owned components
     order_book_ = std::make_shared<OrderBook>();
     data_sink_ = std::make_shared<InMemorySink>();
     portfolio_manager_ =
-        std::make_shared<PortfolioManager>(tracked_user_id_, data_sink_);
+        std::make_shared<PortfolioManager>(tracked_user_id_, data_sink_, max_leverage_, initial_cash_);
     tob_tracker_ = std::make_shared<TopOfBookTracker>("", data_sink_);
     //Registration of shared pointers back to this IClient are initialized after construction
 }
@@ -307,7 +308,7 @@ void OrderBookManager::RouteToTopOfBookTracker(uint64_t best_bid, uint64_t best_
 void OrderBookManager::NotifyStrategyOfOrderBookChange() {
     if (strategy_) {
         // First, update indicators that require the full order book
-        strategy_->update(*order_book_);
+        strategy_->update(*order_book_, last_timestamp_);
 
         // Then, update indicators that work with the snapshot
         OrderBookSnapshot l3_snapshot = GetOrderBookSnapshot();

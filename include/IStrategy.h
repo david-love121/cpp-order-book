@@ -23,7 +23,7 @@ class IStrategy {
 public:
     virtual ~IStrategy() = default;
 
-    virtual void update(const OrderBook& order_book) = 0;
+    virtual void update(const OrderBook& order_book, uint64_t timestamp) = 0;
     virtual void update(const OrderBookSnapshot& order_book_snapshot) = 0;
     virtual void update(const Trade& trade) = 0;
 
@@ -38,7 +38,7 @@ class Strategy : public IStrategy {
 public:
     Strategy(const std::string& name);
 
-    void update(const OrderBook& order_book) override;
+    void update(const OrderBook& order_book, uint64_t timestamp) override;
     void update(const OrderBookSnapshot& order_book_snapshot) override;
     void update(const Trade& trade) override;
 

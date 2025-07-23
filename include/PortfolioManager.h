@@ -55,7 +55,9 @@ public:
   uint64_t tracked_user_id_;
 
   explicit PortfolioManager(uint64_t tracked_user_id,
-                            std::shared_ptr<IDataSink> data_sink);
+                            std::shared_ptr<IDataSink> data_sink,
+                            double max_leverage = 1.0,
+                            double initial_cash = 100000.0);
   ~PortfolioManager();
 
   // Order tracking methods
@@ -104,6 +106,7 @@ public:
     return current_market_price_ * std::abs(running_position_);
   }
   double GetReturnOnEquity() const;
+  double GetCashBalance() const { return cash_balance_; }
   size_t GetTotalTrades() const { return total_trades_; }
   bool IsOrderTracked(uint64_t order_id) const {
     return tracked_order_ids_.count(order_id) > 0;
@@ -126,12 +129,14 @@ private:
   double realized_pnl_ = 0.0;
   double average_cost_ = 0.0;
   double current_market_price_ = 0.0;
+  double cash_balance_ = 0.0;
   size_t total_trades_ = 0;
   std::vector<Trade> trades_;
 
   // Risk management state
   double stop_loss_percentage_ = 0.0; // 0.0 means no stop-loss
   double max_daily_loss_ = 0.0;       // 0.0 means no daily loss limit
+  double max_leverage_ = 1.0;
   bool strategy_disabled_ = false;
 
   // Snapshot management
@@ -151,6 +156,7 @@ private:
   void HandleShortPositionTrade(bool is_buy, double trade_price,
                                 int64_t trade_quantity);
   void TakeSnapshot(uint64_t timestamp = 0);
+  bool IsLeverageExceeded(bool is_buy, double trade_price, int64_t trade_quantity);
   std::string TimestampToString(uint64_t timestamp_ns) const;
   double CalculateUnrealizedPnL() const;
 };

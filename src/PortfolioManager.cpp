@@ -11,11 +11,14 @@
 #include <sstream>
 
 PortfolioManager::PortfolioManager(uint64_t tracked_user_id,
-                                   std::shared_ptr<IDataSink> data_sink)
-    : tracked_user_id_(tracked_user_id), data_sink_(std::move(data_sink)) {
+                                   std::shared_ptr<IDataSink> data_sink,
+                                   double max_leverage, double initial_cash)
+    : tracked_user_id_(tracked_user_id), data_sink_(std::move(data_sink)),
+      max_leverage_(max_leverage), cash_balance_(initial_cash) {
 
   std::cout << "[PORTFOLIO] Initialized for user " << tracked_user_id_
-            << " (order ID tracking mode)" << '\n';
+            << " with max leverage " << max_leverage_ << " and initial cash "
+            << initial_cash << '\n';
 }
 
 PortfolioManager::~PortfolioManager() {}
@@ -43,10 +46,17 @@ void PortfolioManager::OnTrade(const Trade &trade) {
     return; // Not our trade
   }
   *GLogger << "[PortfolioManager] Trade involves tracked user " << tracked_user_id_ << ". Processing." << '\n';
-  trades_.push_back(trade);
+  
   bool is_buy = trade.aggressor_user_id == tracked_user_id_ ? trade.aggressor_is_buy : !trade.aggressor_is_buy;
   double trade_price = static_cast<double>(trade.price);
   int64_t trade_quantity = static_cast<int64_t>(trade.quantity);
+
+  if (IsLeverageExceeded(is_buy, trade_price, trade_quantity)) {
+    *GLogger << "[PortfolioManager] Trade would exceed max leverage. Rejecting." << '\n';
+    return;
+  }
+
+  trades_.push_back(trade);
 
   current_market_price_ = trade_price;
   total_trades_++;
@@ -249,17 +259,19 @@ double PortfolioManager::CalculateUnrealizedPnL() const {
 
 void PortfolioManager::HandleLongPositionTrade(bool is_buy, double trade_price,
                                              int64_t trade_quantity) {
+  double trade_value = trade_price * trade_quantity;
   if (is_buy) {
     // Increasing a long position
     double current_value = average_cost_ * running_position_;
-    double trade_value = trade_price * trade_quantity;
     running_position_ += trade_quantity;
     average_cost_ = (current_value + trade_value) / running_position_;
+    cash_balance_ -= trade_value;
   } else {
     // Reducing or closing a long position
     double pnl = (trade_price - average_cost_) * trade_quantity;
     realized_pnl_ += pnl;
     running_position_ -= trade_quantity;
+    cash_balance_ += trade_value;
     if (running_position_ == 0) {
       average_cost_ = 0.0;
     }
@@ -268,17 +280,19 @@ void PortfolioManager::HandleLongPositionTrade(bool is_buy, double trade_price,
 
 void PortfolioManager::HandleShortPositionTrade(bool is_buy, double trade_price,
                                               int64_t trade_quantity) {
+  double trade_value = trade_price * trade_quantity;
   if (!is_buy) {
     // Opening or increasing a short position
     double current_value = average_cost_ * std::abs(running_position_);
-    double trade_value = trade_price * trade_quantity;
     running_position_ -= trade_quantity;
     average_cost_ = (current_value + trade_value) / std::abs(running_position_);
+    cash_balance_ += trade_value;
   } else {
     // Closing or reducing a short position
     double pnl = (average_cost_ - trade_price) * trade_quantity;
     realized_pnl_ += pnl;
     running_position_ += trade_quantity;
+    cash_balance_ -= trade_value;
     if (running_position_ == 0) {
       average_cost_ = 0.0;
     }
@@ -295,13 +309,39 @@ void PortfolioManager::TakeSnapshot(uint64_t timestamp) {
   PortfolioSnapshot snapshot(timestamp, running_position_,
                              current_market_price_, average_cost_,
                              CalculateUnrealizedPnL(), realized_pnl_,
-                             total_trades_);
+                             total_trades_, cash_balance_);
 
   snapshots_.push_back(snapshot);
 
   if (data_sink_) {
     data_sink_->OnData(snapshot);
   }
+}
+
+bool PortfolioManager::IsLeverageExceeded(bool is_buy, double trade_price,
+                                          int64_t trade_quantity) {
+  if (max_leverage_ <= 0) {
+    return false; // Leverage check disabled
+  }
+
+  double current_portfolio_value = cash_balance_ + GetPositionValue() + GetUnrealizedPnL();
+  double trade_value = trade_price * trade_quantity;
+  double future_position_value = GetPositionValue();
+  double future_cash = cash_balance_;
+
+  if (is_buy) {
+      future_position_value += trade_value;
+      future_cash -= trade_value;
+  } else {
+      future_position_value -= trade_value;
+      future_cash += trade_value;
+  }
+
+  if (future_position_value > (current_portfolio_value * max_leverage_)) {
+    return true;
+  }
+
+  return false;
 }
 
 void PortfolioManager::EnablePeriodicSnapshots(uint64_t interval_ns) {
@@ -499,8 +539,7 @@ bool PortfolioManager::ExportData(const std::string &format,
 
     export_file
         << "timestamp,position,current_price,average_cost,unrealized_pnl,"
-           "realized_pnl,total_pnl,total_trades,position_"
-           "value\n";
+           "realized_pnl,total_pnl,total_trades,position_value,cash_balance\n";
 
     for (const auto &snapshot : snapshots_) {
       std::string timestamp_str = TimestampToString(snapshot.timestamp);
@@ -509,7 +548,7 @@ bool PortfolioManager::ExportData(const std::string &format,
                   << (snapshot.current_price / 100.0) << "," << (snapshot.average_cost / 100.0)
                   << "," << (snapshot.unrealized_pnl / 100.0) << ","
                   << (snapshot.realized_pnl / 100.0) << "," << (snapshot.total_pnl / 100.0) << ","
-                  << (snapshot.position_value / 100.0) << "," << "\n";
+                  << (snapshot.position_value / 100.0) << "," << (snapshot.cash_balance / 100.0) << "\n";
     }
 
     export_file.close();

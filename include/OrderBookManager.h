@@ -45,6 +45,8 @@ private:
     uint64_t client_id_;
     std::string client_name_;
     uint64_t tracked_user_id_;
+    double max_leverage_ = 1.0;
+    double initial_cash_ = 100000.0;
     std::atomic<bool> running_{false};
     
     // Current market state for orchestration
@@ -55,8 +57,10 @@ public:
     /**
      * @brief Constructor for OrderBookManager orchestrator
      * @param tracked_user_id User ID to track in portfolio
+     * @param max_leverage Maximum leverage allowed
+     * @param initial_cash Initial cash balance
      */
-    OrderBookManager(uint64_t tracked_user_id = 0);
+    OrderBookManager(uint64_t tracked_user_id = 0, double max_leverage = 1.0, double initial_cash = 100000.0);
     
     // ========== IClient Interface Implementation ==========
 

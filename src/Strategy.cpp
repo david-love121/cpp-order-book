@@ -1,4 +1,5 @@
 #include "IStrategy.h"
+#include "Order.h"
 #include "SMAIndicator.h"
 #include "EMAIndicator.h"
 #include "RSIIndicator.h"
@@ -15,7 +16,7 @@
 
 Strategy::Strategy(const std::string& name) : m_name(name), m_order_client(nullptr) {}
 
-void Strategy::update(const OrderBook& order_book) {
+void Strategy::update(const OrderBook& order_book, uint64_t timestamp) {
     for (auto& [name, indicator] : m_indicators) {
         if (auto book_imbalance_indicator = std::dynamic_pointer_cast<BookImbalanceIndicator>(indicator)) {
             book_imbalance_indicator->update(order_book);
@@ -26,7 +27,7 @@ void Strategy::update(const OrderBook& order_book) {
         for (const auto& [name, indicator] : m_indicators) {
             values.push_back(indicator->get_value());
         }
-        m_indicator_logger->WriteRow(order_book.timestamp(), values);
+        m_indicator_logger->WriteRow(timestamp, values);
     }
 }
 
@@ -45,17 +46,31 @@ void Strategy::update(const OrderBookSnapshot& order_book_snapshot) {
         auto it = m_signals.find(rule.signal_name);
         if (it != m_signals.end() && it->second->is_active()) {
             if (rule.action == trading::Action::BUY) {
-                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, true, rule.quantity, order_book_snapshot.GetBestAsk(), 0, 0);
+                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, true, rule.quantity, order_book_snapshot.GetBestAsk(), order_book_snapshot.timestamp, order_book_snapshot.timestamp + 1);
             } else if (rule.action == trading::Action::SELL) {
-                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, false, rule.quantity, order_book_snapshot.GetBestBid(), 0, 0);
+                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, false, rule.quantity, order_book_snapshot.GetBestBid(), order_book_snapshot.timestamp, order_book_snapshot.timestamp + 1);
             }
         }
+    }
+    if (m_indicator_logger) {
+        std::vector<double> values;
+        for (const auto& [name, indicator] : m_indicators) {
+            values.push_back(indicator->get_value());
+        }
+        m_indicator_logger->WriteRow(order_book_snapshot.timestamp, values);
     }
 }
 
 void Strategy::update(const Trade& trade) {
     for (auto& [name, indicator] : m_indicators) {
         indicator->update(trade.price);
+    }
+    if (m_indicator_logger) {
+        std::vector<double> values;
+        for (const auto& [name, indicator] : m_indicators) {
+            values.push_back(indicator->get_value());
+        }
+        m_indicator_logger->WriteRow(trade.ts_executed, values);
     }
 }
 
