@@ -1,9 +1,8 @@
 #include "OrderBookManager.h"
 #include "PortfolioManager.h"
 #include "TopOfBookTracker.h"
-#include "DatabentoProcessor.h"
+#include "ParquetProcessor.h"
 #include "Logger.h"
-#include "DatabentoCache.h"
 #include "MeanReversionStrategy.h"
 #include <utility>
 
@@ -17,6 +16,7 @@ OrderBookManager::OrderBookManager(uint64_t tracked_user_id, double max_leverage
     portfolio_manager_ =
         std::make_shared<PortfolioManager>(tracked_user_id_, data_sink_, max_leverage_, initial_cash_);
     tob_tracker_ = std::make_shared<TopOfBookTracker>("", data_sink_);
+    data_processor_ = std::make_shared<ParquetProcessor>();
     //Registration of shared pointers back to this IClient are initialized after construction
 }
 
@@ -126,15 +126,6 @@ void OrderBookManager::OnTradeExecuted(const Trade &trade) {
     if (strategy_) {
         strategy_->update(trade);
     }
-
-    if (trade.aggressor_order_closed) {
-        data_processor_->ClearOrderFromMapping(trade.aggressor_order_id);
-    }
-    // Clear the order in DatabentoProcessor mapping
-    if (trade.resting_order_closed) {
-        data_processor_->ClearOrderFromMapping(trade.resting_order_id);
-    }
-
 }
 
 void OrderBookManager::OnOrderAcknowledged(uint64_t /*order_id*/) {
@@ -144,7 +135,6 @@ void OrderBookManager::OnOrderAcknowledged(uint64_t /*order_id*/) {
 void OrderBookManager::OnOrderCancelled(uint64_t order_id) {
     // Handle order cancellation notification (order already cancelled by OrderBook)
     *GLogger << "[OrderBookManager] Order " << order_id << " cancelled - notifying strategy" << '\n';
-    data_processor_->ClearOrderFromMapping(order_id);
     // Notify strategy of order book change
     NotifyStrategyOfOrderBookChange();
 }
@@ -166,7 +156,6 @@ void OrderBookManager::OnOrderRejected(uint64_t order_id, const std::string &rea
 void OrderBookManager::OnOrderFilled(uint64_t order_id) {
     // Handle order filled notification (order was fully executed and removed)
     *GLogger << "[OrderBookManager] Order " << order_id << " filled completely - clearing mapping" << '\n';
-    data_processor_->ClearOrderFromMapping(order_id);
     // Notify strategy of order book change
     NotifyStrategyOfOrderBookChange();
 }
@@ -241,14 +230,6 @@ std::shared_ptr<IStrategy> OrderBookManager::GetStrategy() const {
     return strategy_;
 }
 
-// Market data processing
-
-KeepGoing OrderBookManager::ProcessMarketData(const Record& /*record*/) {
-    // This would be implemented to process Databento market data
-    // For now, return KeepGoing::Continue as placeholder
-    return KeepGoing::Continue;
-}
-
 // Configuration
 
 uint64_t OrderBookManager::GetTrackedUserId() const {
@@ -270,20 +251,6 @@ void OrderBookManager::UpdateMarketState(const std::string& symbol, uint64_t tim
 
 std::shared_ptr<IClient> OrderBookManager::GetClient() {
     return shared_from_this();
-}
-
-
-// Data processor management
-
-void OrderBookManager::SetDataProcessor(std::shared_ptr<DatabentoProcessor> processor) {
-    data_processor_ = std::move(processor);
-    if (data_processor_ && order_book_) {
-        data_processor_->SetOrderClient(shared_from_this());
-    }
-}
-
-std::shared_ptr<DatabentoProcessor> OrderBookManager::GetDataProcessor() const {
-    return data_processor_;
 }
 
 // Private methods
@@ -316,75 +283,23 @@ void OrderBookManager::NotifyStrategyOfOrderBookChange() {
     }
 }
 
-void OrderBookManager::RunHistoricalDataDemo() {
-    *GLogger << "\n=== Historical MBO Data Demo for ES Futures ===" << '\n';
-    
-    // Check if API key is available
-    const char* api_key = std::getenv("DATABENTO_API_KEY");
-    bool has_api_key = (api_key && strlen(api_key) > 0);
-    
-    if (!has_api_key) {
-        *GLogger << "No DATABENTO_API_KEY found. Will use cached data only." << '\n';
-    } else {
-        *GLogger << "API key found. Will use cached data or fetch if needed." << '\n';
-    }
+void OrderBookManager::RunBacktest(const std::string& data_path) {
+    *GLogger << "\n=== Backtest from Parquet File ===" << '\n';
     
     try {
-        // Initialize cache and parameters
-        DatabentoCache cache("databento_cache");
-        
-        // Historical data parameters
-        std::string dataset = "GLBX.MDP3";
-        std::string start_time = "2024-06-28T15:30";
-        std::string end_time = "2024-06-28T15:35";
-        std::vector<std::string> symbols = {"ESU4"};
-        Schema schema = Schema::Mbo;
-        
-        std::string cache_key = cache.generateCacheKey(dataset, start_time, end_time, symbols, schema);
-        std::string cache_file_path = cache.getCacheFilePath(cache_key);
-        
-        *GLogger << "Cache key: " << cache_key << '\n';
-        *GLogger << "Cache file: " << cache_file_path << '\n';
-        cache.listCache();
-        
         if (!data_processor_) {
-            data_processor_ = std::make_shared<DatabentoProcessor>();
-            SetDataProcessor(data_processor_);
+            data_processor_ = std::make_shared<ParquetProcessor>();
         }
         
+        data_processor_->SetOrderClient(shared_from_this());
         InitializeAfterConstruction();
         
-        *GLogger << "Fetching historical MBO data for ES S&P 500 futures..." << '\n';
-        
-        if (cache.hasCachedData(cache_key)) {
-            *GLogger << "\n[CACHE] Loading data from cache file..." << '\n';
-            DbnFileStore dbn_store{cache_file_path};
-            
-            auto record_callback = [this](const Record& record) -> KeepGoing {
-                return data_processor_->ProcessMarketData(record);
-            };
-            
-            dbn_store.Replay(record_callback);
-        } else {
-            if (!has_api_key) {
-                *GLogger << "\n[ERROR] No cached data found and no API key available." << '\n';
-                return;
-            }
-            
-            *GLogger << "\n[API] Fetching fresh data from Databento API..." << '\n';
-            auto client = HistoricalBuilder{}.SetKeyFromEnv().Build();
-            auto dbn_store = client.TimeseriesGetRangeToFile(dataset, {start_time, end_time}, symbols, schema, cache_file_path);
-            
-            auto record_callback = [this](const Record& record) -> KeepGoing {
-                return data_processor_->ProcessMarketData(record);
-            };
-            
-            dbn_store.Replay(record_callback);
-        }
+        *GLogger << "Processing data from: " << data_path << '\n';
+        data_processor_->ProcessFile(data_path);
 
         portfolio_manager_->PrintPortfolioSummary();
         
     } catch (const std::exception& e) {
-        *GLogger << "Historical data demo error: " << e.what() << '\n';
+        *GLogger << "Backtest error: " << e.what() << '\n';
     }
 }

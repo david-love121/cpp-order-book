@@ -2,11 +2,14 @@ import os
 import sys
 
 import matplotlib as matplotlib
+import pyarrow as pa
+import pyarrow.parquet as pq
+import yfinance as yf
 
 matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 # Add the build directory to the Python path to find the compiled module
 build_dir = os.path.join(os.path.dirname(__file__), 'build')
@@ -19,6 +22,35 @@ except ImportError:
     print(f"Please ensure it has been compiled and is in the '{build_dir}' directory.")
     sys.exit(1)
 
+def fetch_and_cache_data(ticker, period="1d", interval="1m"):
+    """
+    Fetches historical data from yfinance and caches it in a Parquet file.
+    """
+    cache_dir = "yfinance_cache"
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+
+    file_path = os.path.join(cache_dir, f"{ticker}_{period}_{interval}.parquet")
+
+    if os.path.exists(file_path):
+        print(f"Loading data from cache: {file_path}")
+        return file_path
+
+    print(f"Fetching data for {ticker} from yfinance...")
+    data = yf.download(ticker, period=period, interval=interval)
+    
+    if data.empty:
+        raise ValueError("No data fetched from yfinance. Check ticker and parameters.")
+
+    data.columns = data.columns.droplevel(1)
+    print(f"Columns: {data.columns}")
+    # Convert to Arrow Table and save as Parquet
+    table = pa.Table.from_pandas(data)
+    pq.write_table(table, file_path)
+    print(f"Data cached to {file_path}")
+    
+    return file_path
+
 def main():
     print("--- C++/Python Hybrid Trading Strategy ---")
     
@@ -26,24 +58,31 @@ def main():
     obe.set_log_file(log_file)
     print(f"C++ engine output is being logged to: {log_file}")
 
-    # 1. Instantiate the C++ engine components
+    # 1. Fetch and cache data
+    try:
+        data_path = fetch_and_cache_data("AAPL", period="1d", interval="1m")
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        sys.exit(1)
+
+    # 2. Instantiate the C++ engine components
     # Note that a value of 100 for initial cash corresponds to 1 dollar
     manager = obe.OrderBookManager(tracked_user_id=9999, max_leverage=2.0, initial_cash=10000000.0)
     strategy = obe.Strategy("MyMeanReversionStrategy")
 
-    # 2. Configure the strategy from a TOML file
+    # 3. Configure the strategy from a TOML file
     with open("strategy_config.toml", "r") as f:
         toml_config = f.read()
     strategy.from_toml_string(toml_config)
     print("Strategy configuration loaded from strategy_config.toml")
 
-    # 3. Configure the C++ engine
+    # 4. Configure the C++ engine
     manager.set_strategy(strategy)
     manager.initialize_after_construction()
 
-    print("Starting the historical data demo...")
-    manager.run_historical_data_demo()
-    print("Historical data demo finished.")
+    print("Starting the backtest...")
+    manager.run_backtest(data_path) # This will be the new method
+    print("Backtest finished.")
 
     # 5. Analyze the results
     data_sink = manager.get_data_sink()
@@ -70,6 +109,10 @@ def main():
         print(f"  - {trade}")
     #Note that values are printed in cents, not dollars
     # Convert to pandas DataFrames
+    if not portfolio_snapshots:
+        print("No portfolio snapshots to analyze.")
+        return
+
     portfolio_df = pd.DataFrame([{
         'timestamp': pd.to_datetime(p.timestamp),
         'position': p.position,

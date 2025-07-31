@@ -14,13 +14,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # FetchContent for dependencies
 include(FetchContent)
-FetchContent_Declare(
-    databento
-    GIT_REPOSITORY https://github.com/databento/databento-cpp.git
-    GIT_TAG HEAD
-)
-set(CMAKE_POSITION_INDEPENDENT_CODE ON) # Add this for PIC
-FetchContent_MakeAvailable(databento)
+
+# Find the necessary packages
+find_package(Arrow REQUIRED)
+find_package(Parquet REQUIRED)
 
 FetchContent_Declare(
     tomlplusplus
@@ -41,12 +38,13 @@ FetchContent_MakeAvailable(pybind11)
 
 # Collect all source and header files
 file(GLOB_RECURSE ORDERBOOK_SOURCES "src/*.cpp")
-list(FILTER ORDERBOOK_SOURCES EXCLUDE REGEX ".*/(bindings|main)\\.cpp$") # Exclude bindings.cpp and main.cpp
+list(FILTER ORDERBOOK_SOURCES EXCLUDE REGEX ".*/(bindings|main|DatabentoProcessor)\\.cpp$") # Exclude bindings.cpp and main.cpp
 file(GLOB_RECURSE ORDERBOOK_HEADERS "include/*.h")
 
 # Create the OrderBook library
 add_library(OrderBookLib STATIC
     ${ORDERBOOK_SOURCES}
+    src/ParquetProcessor.cpp
     ${ORDERBOOK_HEADERS}
 )
 set_target_properties(OrderBookLib PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -61,7 +59,8 @@ target_include_directories(OrderBookLib
 # Link with headers and dependencies
 target_link_libraries(OrderBookLib
     PUBLIC
-        databento::databento
+        Arrow::arrow_shared
+        Parquet::parquet_shared
         tomlplusplus::tomlplusplus
 )
 

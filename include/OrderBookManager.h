@@ -12,17 +12,8 @@
 #include "Logger.h"
 #include "InMemorySink.h"
 
-// Include Databento headers for market data processing
-#include <databento/live.hpp>
-#include <databento/historical.hpp>
-#include <databento/symbol_map.hpp>
-#include <databento/dbn.hpp>
-#include <databento/dbn_file_store.hpp>
-
-using namespace databento;
-
 // Forward declarations
-class DatabentoProcessor;
+class ParquetProcessor;
 
 /**
  * @brief Central orchestrator for order book operations and market data
@@ -39,7 +30,7 @@ private:
     std::shared_ptr<TopOfBookTracker> tob_tracker_;
     std::shared_ptr<IDataSink> data_sink_;
     std::shared_ptr<IStrategy> strategy_;
-    std::shared_ptr<DatabentoProcessor> data_processor_;
+    std::shared_ptr<ParquetProcessor> data_processor_;
     
     // Client identification
     uint64_t client_id_;
@@ -111,7 +102,7 @@ public:
     std::shared_ptr<IStrategy> GetStrategy() const;
     
     // Market data processing
-    KeepGoing ProcessMarketData(const Record& record);
+    void RunBacktest(const std::string& data_path);
     
     // Provide IClient interface access for external use
     std::shared_ptr<IClient> GetClient();
@@ -123,13 +114,6 @@ public:
     
     // L3 Order Book data access
     OrderBookSnapshot GetOrderBookSnapshot() const;
-
-    // Demo runners
-    void RunHistoricalDataDemo();
-    
-    // Data processor management
-    void SetDataProcessor(std::shared_ptr<DatabentoProcessor> processor);
-    std::shared_ptr<DatabentoProcessor> GetDataProcessor() const;
 
 private:
     // Internal orchestration methods

@@ -12,22 +12,9 @@
 
 
 // Include the OrderBook headers
-
-#include "DatabentoCache.h"
-
 #include "OrderBookManager.h"
-#include "DatabentoProcessor.h"
 #include "IndicatorLogger.h"
 #include "Logger.h"
-
-// Include Databento headers
-#include <databento/live.hpp>
-#include <databento/historical.hpp>
-#include <databento/symbol_map.hpp>
-#include <databento/dbn.hpp>
-#include <databento/dbn_file_store.hpp>
-
-using namespace databento;
 
 // Function to load environment variables from .env file
 void loadEnvFile(const std::string& filename = ".env") {

@@ -121,7 +121,7 @@ PYBIND11_MODULE(cpp_order_book_engine, m) {
         .def("start", &OrderBookManager::Start)
         .def("stop", &OrderBookManager::Stop)
         .def("initialize_after_construction", &OrderBookManager::InitializeAfterConstruction)
-        .def("run_historical_data_demo", &OrderBookManager::RunHistoricalDataDemo)
+        .def("run_backtest", &OrderBookManager::RunBacktest)
         .def("get_portfolio_manager", &OrderBookManager::GetPortfolioManager)
         .def("get_data_sink", [](OrderBookManager &self) {
             return std::dynamic_pointer_cast<InMemorySink>(self.GetDataSink());
