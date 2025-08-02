@@ -15,6 +15,7 @@
 #include "Trade.h"
 #include "PortfolioManager.h"
 #include "IndicatorLogger.h"
+#include "RuleLogger.h"
 
 std::shared_ptr<IRule> parse_rule(const toml::table& rule_config);
 
@@ -44,14 +45,16 @@ void Strategy::update(const OrderBookSnapshot& order_book_snapshot) {
             }
         }
     }
-
-    for (const auto& rule : m_rules) {
-        if (rule->is_satisfied(m_signals, *m_portfolio_manager)) {
-            if (rule->get_action() == trading::Action::BUY) {
-                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, true, rule->get_quantity(), order_book_snapshot.GetBestAsk(), order_book_snapshot.timestamp, order_book_snapshot.timestamp + 1);
-            } else if (rule->get_action() == trading::Action::SELL) {
-                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, false, rule->get_quantity(), order_book_snapshot.GetBestBid(), order_book_snapshot.timestamp, order_book_snapshot.timestamp + 1);
-            }
+for (const auto& rule : m_rules) {
+    bool is_satisfied = rule->is_satisfied(m_signals, *m_portfolio_manager);
+    if (m_rule_logger) {
+        m_rule_logger->LogRuleEvaluation(order_book_snapshot.timestamp, rule->get_name(), is_satisfied);
+    }
+    if (is_satisfied) {
+        if (rule->get_action() == trading::Action::BUY) {
+            m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, true, rule->get_quantity(), order_book_snapshot.GetBestAsk(), order_book_snapshot.timestamp, order_book_snapshot.timestamp + 1);
+        } else if (rule->get_action() == trading::Action::SELL) {
+            m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, false, rule->get_quantity(), order_book_snapshot.GetBestBid(), order_book_snapshot.timestamp, order_book_snapshot.timestamp + 1);
         }
     }
     if (m_indicator_logger) {
@@ -60,6 +63,7 @@ void Strategy::update(const OrderBookSnapshot& order_book_snapshot) {
             values.push_back(indicator->get_value());
         }
         m_indicator_logger->WriteRow(order_book_snapshot.timestamp, values);
+    }
     }
 }
 
@@ -153,6 +157,7 @@ void Strategy::set_portfolio_manager(std::shared_ptr<PortfolioManager> portfolio
     if (m_portfolio_manager) {
         auto data_sink = m_portfolio_manager->GetDataSink();
         m_indicator_logger = std::make_unique<IndicatorLogger>(data_sink);
+        m_rule_logger = std::make_unique<RuleLogger>(data_sink);
         std::vector<std::string> headers;
         for (const auto& [name, indicator] : m_indicators) {
             headers.push_back(name);
@@ -163,6 +168,7 @@ void Strategy::set_portfolio_manager(std::shared_ptr<PortfolioManager> portfolio
 
 std::shared_ptr<IRule> parse_rule(const toml::table& rule_config) {
     std::string type = rule_config["type"].value_or("");
+    std::string name = rule_config["name"].value_or("");
 
     if (type == "IF") {
         std::string condition_str = rule_config["condition"].value_or("always");
@@ -180,7 +186,9 @@ std::shared_ptr<IRule> parse_rule(const toml::table& rule_config) {
         auto sub_rule_config = rule_config["rule"].as_table();
         if (sub_rule_config) {
             auto sub_rule = parse_rule(*sub_rule_config);
-            return std::make_shared<IfRule>(condition, sub_rule);
+            auto rule = std::make_shared<IfRule>(name, condition, sub_rule);
+            rule->set_name(name);
+            return rule;
         }
     } else if (type == "AND") {
         std::vector<std::string> signal_names;
@@ -192,7 +200,9 @@ std::shared_ptr<IRule> parse_rule(const toml::table& rule_config) {
         std::string action_str = rule_config["action"].value_or("");
         trading::Action action = (action_str == "BUY") ? trading::Action::BUY : trading::Action::SELL;
         int quantity = rule_config["quantity"].value_or(0);
-        return std::make_shared<AndRule>(signal_names, action, quantity);
+        auto rule = std::make_shared<AndRule>(name, signal_names, action, quantity);
+        rule->set_name(name);
+        return rule;
     }
     return nullptr;
 }

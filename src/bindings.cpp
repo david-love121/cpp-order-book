@@ -25,6 +25,7 @@
 #include "InMemorySink.h"
 #include "TOBSnapshot.h"
 #include "PortfolioSnapshot.h"
+#include "RuleEvaluation.h"
 
 namespace py = pybind11;
 
@@ -116,11 +117,18 @@ PYBIND11_MODULE(cpp_order_book_engine, m) {
       .def_readwrite("headers", &IndicatorSnapshot::headers)
       .def_readwrite("values", &IndicatorSnapshot::values);
 
+  py::class_<RuleEvaluation>(m, "RuleEvaluation")
+      .def(py::init<uint64_t, const std::string&, bool>())
+      .def_readwrite("timestamp", &RuleEvaluation::timestamp)
+      .def_readwrite("rule_name", &RuleEvaluation::rule_name)
+      .def_readwrite("is_satisfied", &RuleEvaluation::is_satisfied);
+
   py::class_<InMemorySink, IDataSink, std::shared_ptr<InMemorySink>>(m, "InMemorySink")
       .def("get_portfolio_snapshots", &InMemorySink::GetPortfolioSnapshots, py::return_value_policy::reference)
       .def("get_tob_snapshots", &InMemorySink::GetTobSnapshots, py::return_value_policy::reference)
       .def("get_trades", &InMemorySink::GetTrades, py::return_value_policy::reference)
-      .def("get_indicator_snapshots", &InMemorySink::GetIndicatorSnapshots, py::return_value_policy::reference);
+      .def("get_indicator_snapshots", &InMemorySink::GetIndicatorSnapshots, py::return_value_policy::reference)
+      .def("get_rule_evaluations", &InMemorySink::GetRuleEvaluations, py::return_value_policy::reference);
 
     py::class_<OrderBookManager, std::shared_ptr<OrderBookManager>>(m, "OrderBookManager")
         .def(py::init<uint64_t, double, double>(), py::arg("tracked_user_id") = 0, py::arg("max_leverage") = 1.0, py::arg("initial_cash") = 100000.0)

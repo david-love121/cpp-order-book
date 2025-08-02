@@ -12,6 +12,8 @@ void InMemorySink::OnData(const DataRecord& record) {
             trades_.push_back(arg);
         } else if constexpr (std::is_same_v<T, IndicatorSnapshot>) {
             indicator_snapshots_.push_back(arg);
+        } else if constexpr (std::is_same_v<T, RuleEvaluation>) {
+            rule_evaluations_.push_back(arg);
         }
     }, record);
 }
@@ -30,4 +32,8 @@ const std::vector<Trade>& InMemorySink::GetTrades() const {
 
 const std::vector<IndicatorSnapshot>& InMemorySink::GetIndicatorSnapshots() const {
     return indicator_snapshots_;
+}
+
+const std::vector<RuleEvaluation>& InMemorySink::GetRuleEvaluations() const {
+    return rule_evaluations_;
 }

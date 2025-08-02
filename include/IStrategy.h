@@ -12,6 +12,7 @@
 #include <map>
 #include "ISignal.h"
 #include "IndicatorLogger.h"
+#include "RuleLogger.h"
 #include "IRule.h"
 
 // Forward declarations
@@ -57,4 +58,5 @@ protected:
     std::map<std::string, std::shared_ptr<ISignal>> m_signals;
     std::vector<std::shared_ptr<IRule>> m_rules;
     std::unique_ptr<IndicatorLogger> m_indicator_logger;
+    std::unique_ptr<RuleLogger> m_rule_logger;
 };

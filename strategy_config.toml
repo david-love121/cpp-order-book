@@ -43,12 +43,14 @@ value = 50
 
 # If (positions == 0) AND (ema_cross_above AND rsi_oversold)
 [[rules]]
+name = "EntryRule"
 type = "IF"
 condition = "if_flat"
-rule = { type = "AND", signals = ["ema_cross_above", "rsi_oversold"], action = "BUY", quantity = 1 }
+rule = { name = "EntryCondition", type = "AND", signals = ["ema_cross_above", "rsi_oversold"], action = "BUY", quantity = 1 }
 
 # If (positions > 0) AND (ema_cross_below AND rsi_overbought)
 [[rules]]
+name = "ExitRule"
 type = "IF"
 condition = "if_long"
-rule = { type = "AND", signals = ["ema_cross_below", "rsi_overbought"], action = "SELL", quantity = 1 }
+rule = { name = "ExitCondition", type = "AND", signals = ["ema_cross_below", "rsi_overbought"], action = "SELL", quantity = 1 }

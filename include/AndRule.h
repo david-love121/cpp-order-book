@@ -4,7 +4,7 @@
 
 class AndRule : public IRule {
 public:
-    AndRule(const std::vector<std::string>& signal_names, trading::Action action, int quantity);
+    AndRule(const std::string& name, const std::vector<std::string>& signal_names, trading::Action action, int quantity);
 
     bool is_satisfied(const std::map<std::string, std::shared_ptr<ISignal>>& signals, const PortfolioManager& portfolio) const override;
     trading::Action get_action() const override;

@@ -1,7 +1,9 @@
 #include "IfRule.h"
 
-IfRule::IfRule(RuleCondition condition, std::shared_ptr<IRule> rule_to_evaluate)
-    : m_condition(condition), m_rule_to_evaluate(rule_to_evaluate) {}
+IfRule::IfRule(const std::string& name, RuleCondition condition, std::shared_ptr<IRule> rule_to_evaluate)
+    : m_condition(condition), m_rule_to_evaluate(rule_to_evaluate) {
+    m_name = name;
+}
 
 bool IfRule::is_satisfied(const std::map<std::string, std::shared_ptr<ISignal>>& signals, const PortfolioManager& portfolio) const {
     bool condition_met = false;

@@ -5,7 +5,7 @@
 
 class IfRule : public IRule {
 public:
-    IfRule(RuleCondition condition, std::shared_ptr<IRule> rule_to_evaluate);
+    IfRule(const std::string& name, RuleCondition condition, std::shared_ptr<IRule> rule_to_evaluate);
 
     bool is_satisfied(const std::map<std::string, std::shared_ptr<ISignal>>& signals, const PortfolioManager& portfolio) const override;
     trading::Action get_action() const override;

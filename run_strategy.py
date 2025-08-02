@@ -168,6 +168,7 @@ def main():
     portfolio_snapshots = data_sink.get_portfolio_snapshots()
     tob_snapshots = data_sink.get_tob_snapshots()
     trades = data_sink.get_trades()
+    rule_evaluations = data_sink.get_rule_evaluations()
 
     print("\n--- Analysis ---")
     print(f"Total portfolio snapshots: {len(portfolio_snapshots)}")
@@ -182,6 +183,10 @@ def main():
     print(f"Total indicator snapshots: {len(indicator_snapshots)}")
     if indicator_snapshots:
         print(f"  - Last indicator snapshot: Headers = {indicator_snapshots[-1].headers}, Values = {indicator_snapshots[-1].values}")
+
+    print(f"Total rule evaluations: {len(rule_evaluations)}")
+    if rule_evaluations:
+        print(f"  - Last rule evaluation: Name = {rule_evaluations[-1].rule_name}, Satisfied = {rule_evaluations[-1].is_satisfied}")
 
     print(f"Total trades executed: {len(trades)}")
     for trade in trades:
@@ -211,8 +216,15 @@ def main():
             row[h] = v
         indicator_data.append(row)
     indicator_df = pd.DataFrame(indicator_data)
+
+    rule_df = pd.DataFrame([{
+        'timestamp': pd.to_datetime(r.timestamp),
+        'rule_name': r.rule_name,
+        'is_satisfied': r.is_satisfied
+    } for r in rule_evaluations])
+
     # Plotting
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True, figsize=(15, 12))
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, sharex=True, figsize=(15, 16))
 
     # Plot 1: Total PnL
     ax1.plot(portfolio_df['timestamp'], portfolio_df['total_pnl'], label='Total PnL', color='blue')
@@ -239,6 +251,18 @@ def main():
         ax3.grid(True)
 
     ax3.set_xlabel('Timestamp')
+    ax3.grid(True)
+
+    # Plot 4: Rule Evaluations
+    for rule_name, group in rule_df.groupby('rule_name'):
+        satisfied = group[group['is_satisfied']]
+        ax4.scatter(satisfied['timestamp'], satisfied['is_satisfied'], label=rule_name)
+    ax4.set_ylabel('Rule Satisfied')
+    ax4.set_yticks([1])
+    ax4.set_yticklabels(['True'])
+    ax4.legend()
+    ax4.grid(True)
+
     plt.tight_layout()
     plt.show()
 
