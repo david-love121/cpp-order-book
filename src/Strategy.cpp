@@ -1,4 +1,6 @@
 #include "IStrategy.h"
+#include "AndRule.h"
+#include "IfRule.h"
 #include "Order.h"
 #include "SMAIndicator.h"
 #include "EMAIndicator.h"
@@ -13,6 +15,8 @@
 #include "Trade.h"
 #include "PortfolioManager.h"
 #include "IndicatorLogger.h"
+
+std::shared_ptr<IRule> parse_rule(const toml::table& rule_config);
 
 Strategy::Strategy(const std::string& name) : m_name(name), m_order_client(nullptr) {}
 
@@ -35,7 +39,6 @@ void Strategy::update(const OrderBookSnapshot& order_book_snapshot) {
     uint64_t mid_price = order_book_snapshot.GetMidPrice();
     if (mid_price > 0) {
         for (auto& [name, indicator] : m_indicators) {
-            // BookImbalanceIndicator is updated by the other update method
             if (dynamic_cast<BookImbalanceIndicator*>(indicator.get()) == nullptr) {
                 indicator->update(mid_price);
             }
@@ -43,12 +46,11 @@ void Strategy::update(const OrderBookSnapshot& order_book_snapshot) {
     }
 
     for (const auto& rule : m_rules) {
-        auto it = m_signals.find(rule.signal_name);
-        if (it != m_signals.end() && it->second->is_active()) {
-            if (rule.action == trading::Action::BUY) {
-                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, true, rule.quantity, order_book_snapshot.GetBestAsk(), order_book_snapshot.timestamp, order_book_snapshot.timestamp + 1);
-            } else if (rule.action == trading::Action::SELL) {
-                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, false, rule.quantity, order_book_snapshot.GetBestBid(), order_book_snapshot.timestamp, order_book_snapshot.timestamp + 1);
+        if (rule->is_satisfied(m_signals, *m_portfolio_manager)) {
+            if (rule->get_action() == trading::Action::BUY) {
+                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, true, rule->get_quantity(), order_book_snapshot.GetBestAsk(), order_book_snapshot.timestamp, order_book_snapshot.timestamp + 1);
+            } else if (rule->get_action() == trading::Action::SELL) {
+                m_order_client->SubmitOrder(m_portfolio_manager->tracked_user_id_, false, rule->get_quantity(), order_book_snapshot.GetBestBid(), order_book_snapshot.timestamp, order_book_snapshot.timestamp + 1);
             }
         }
     }
@@ -110,11 +112,13 @@ void Strategy::from_toml(const toml::table& config) {
             if (type == "CrossesAbove") {
                 std::string indicator_a_name = signal_config["indicator_a"].value_or("");
                 std::string indicator_b_name = signal_config["indicator_b"].value_or("");
-                m_signals[name] = std::make_shared<CrossesAboveSignal>(name, m_indicators[indicator_a_name], m_indicators[indicator_b_name]);
+                int cooldown = signal_config["cooldown"].value_or(0);
+                m_signals[name] = std::make_shared<CrossesAboveSignal>(name, m_indicators[indicator_a_name], m_indicators[indicator_b_name], cooldown);
             } else if (type == "CrossesBelow") {
                 std::string indicator_a_name = signal_config["indicator_a"].value_or("");
                 std::string indicator_b_name = signal_config["indicator_b"].value_or("");
-                m_signals[name] = std::make_shared<CrossesBelowSignal>(m_indicators[indicator_a_name], m_indicators[indicator_b_name]);
+                int cooldown = signal_config["cooldown"].value_or(0);
+                m_signals[name] = std::make_shared<CrossesBelowSignal>(m_indicators[indicator_a_name], m_indicators[indicator_b_name], cooldown);
             } else if (type == "AboveValue") {
                 std::string indicator_name = signal_config["indicator"].value_or("");
                 uint64_t value = signal_config["value"].value_or<uint64_t>(0);
@@ -129,25 +133,21 @@ void Strategy::from_toml(const toml::table& config) {
 
     if (auto rules = config["rules"].as_array()) {
         for (auto&& elem : *rules) {
-            const auto& rule_config = *elem.as_table();
-            std::string signal_name = rule_config["signal"].value_or("");
-            std::string action_str = rule_config["action"].value_or("");
-            int quantity = rule_config["quantity"].value_or(0);
-
-            trading::Action action = (action_str == "BUY") ? trading::Action::BUY : trading::Action::SELL;
-            m_rules.push_back({signal_name, action, quantity});
+            if (auto rule = parse_rule(*elem.as_table())) {
+                m_rules.push_back(rule);
+            }
         }
     }
 }
 
 toml::table Strategy::to_toml() const {
-    // This is a simplified implementation for now
     return toml::table{};
 }
 
 void Strategy::set_order_client(IClient* client) {
     m_order_client = client;
 }
+
 void Strategy::set_portfolio_manager(std::shared_ptr<PortfolioManager> portfolio_manager) {
     m_portfolio_manager = portfolio_manager;
     if (m_portfolio_manager) {
@@ -159,4 +159,40 @@ void Strategy::set_portfolio_manager(std::shared_ptr<PortfolioManager> portfolio
         }
         m_indicator_logger->WriteHeader(headers);
     }
+}
+
+std::shared_ptr<IRule> parse_rule(const toml::table& rule_config) {
+    std::string type = rule_config["type"].value_or("");
+
+    if (type == "IF") {
+        std::string condition_str = rule_config["condition"].value_or("always");
+        RuleCondition condition;
+        if (condition_str == "if_flat") {
+            condition = RuleCondition::IF_FLAT;
+        } else if (condition_str == "if_long") {
+            condition = RuleCondition::IF_LONG;
+        } else if (condition_str == "if_short") {
+            condition = RuleCondition::IF_SHORT;
+        } else {
+            condition = RuleCondition::ALWAYS;
+        }
+        
+        auto sub_rule_config = rule_config["rule"].as_table();
+        if (sub_rule_config) {
+            auto sub_rule = parse_rule(*sub_rule_config);
+            return std::make_shared<IfRule>(condition, sub_rule);
+        }
+    } else if (type == "AND") {
+        std::vector<std::string> signal_names;
+        if (auto signals = rule_config["signals"].as_array()) {
+            for (auto&& signal_elem : *signals) {
+                signal_names.push_back(signal_elem.value_or(""));
+            }
+        }
+        std::string action_str = rule_config["action"].value_or("");
+        trading::Action action = (action_str == "BUY") ? trading::Action::BUY : trading::Action::SELL;
+        int quantity = rule_config["quantity"].value_or(0);
+        return std::make_shared<AndRule>(signal_names, action, quantity);
+    }
+    return nullptr;
 }

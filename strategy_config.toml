@@ -20,41 +20,35 @@ name = "ema_cross_above"
 type = "CrossesAbove"
 indicator_a = "ema_fast"
 indicator_b = "ema_slow"
+cooldown = 10
 
 [[signals]]
 name = "ema_cross_below"
 type = "CrossesBelow"
 indicator_a = "ema_fast"
 indicator_b = "ema_slow"
+cooldown = 10
 
 [[signals]]
 name = "rsi_oversold"
 type = "BelowValue"
 indicator = "rsi"
-value = 30
+value = 40
 
 [[signals]]
 name = "rsi_overbought"
 type = "AboveValue"
 indicator = "rsi"
-value = 70
+value = 50
 
+# If (positions == 0) AND (ema_cross_above AND rsi_oversold)
 [[rules]]
-signal = "ema_cross_above"
-action = "BUY"
-quantity = 1
+type = "IF"
+condition = "if_flat"
+rule = { type = "AND", signals = ["ema_cross_above", "rsi_oversold"], action = "BUY", quantity = 1 }
 
+# If (positions > 0) AND (ema_cross_below AND rsi_overbought)
 [[rules]]
-signal = "rsi_oversold"
-action = "BUY"
-quantity = 1
-
-[[rules]]
-signal = "ema_cross_below"
-action = "SELL"
-quantity = 1
-
-[[rules]]
-signal = "rsi_overbought"
-action = "SELL"
-quantity = 1
+type = "IF"
+condition = "if_long"
+rule = { type = "AND", signals = ["ema_cross_below", "rsi_overbought"], action = "SELL", quantity = 1 }

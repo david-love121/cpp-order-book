@@ -7,7 +7,7 @@
 
 class CrossesBelowSignal : public ISignal {
 public:
-    CrossesBelowSignal(std::shared_ptr<IIndicator> indicator_a, std::shared_ptr<IIndicator> indicator_b);
+    CrossesBelowSignal(std::shared_ptr<IIndicator> indicator_a, std::shared_ptr<IIndicator> indicator_b, int cooldown);
 
     bool is_active() const override;
     const std::string& name() const override;
@@ -18,6 +18,8 @@ private:
     std::shared_ptr<IIndicator> m_indicator_b;
     mutable double m_previous_a_value;
     mutable double m_previous_b_value;
+    int m_cooldown;
+    mutable int m_cooldown_counter;
 };
 
 #endif // CROSSESBELOWSIGNAL_H

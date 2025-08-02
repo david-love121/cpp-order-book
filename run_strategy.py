@@ -1,10 +1,13 @@
+import argparse
 import os
 import sys
 
+import databento as db
 import matplotlib as matplotlib
 import pyarrow as pa
 import pyarrow.parquet as pq
 import yfinance as yf
+from dotenv import load_dotenv
 
 matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
@@ -43,6 +46,62 @@ def fetch_and_cache_data(ticker, period="1d", interval="1m"):
         raise ValueError("No data fetched from yfinance. Check ticker and parameters.")
 
     data.columns = data.columns.droplevel(1)
+    data = data.reset_index()
+    data['ticker'] = ticker
+    data['data_type'] = 'ohlcv'
+    print(f"Columns: {data.columns}")
+    # Convert to Arrow Table and save as Parquet
+  
+    table = pa.Table.from_pandas(data)
+    pq.write_table(table, file_path)
+    print(f"Data cached to {file_path}")
+    
+    return file_path
+
+def fetch_and_cache_databento_data(dataset, start_time, end_time, symbols):
+    """
+    Fetches historical data from Databento and caches it in a Parquet file.
+    """
+    cache_dir = "databento_cache"
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+
+    file_path = os.path.join(cache_dir, f"{dataset}_{start_time}_{end_time}_{'_'.join(symbols)}.parquet")
+
+    if os.path.exists(file_path):
+        print(f"Loading data from cache: {file_path}")
+        return file_path
+
+    print(f"Fetching data for {symbols} from Databento...")
+    client = db.Historical()
+    
+    cost = client.metadata.get_cost(
+        dataset=dataset,
+        start=start_time,
+        end=end_time,
+        symbols=symbols,
+        schema="mbp-1",
+    )
+    
+    print(f"This query will cost ${cost:.2f}. Do you want to continue? (y/n)")
+    if input().lower() != "y":
+        sys.exit(0)
+
+    data = client.timeseries.get_range(
+        dataset=dataset,
+        start=start_time,
+        end=end_time,
+        symbols=symbols,
+        schema="mbp-1",
+    ).to_df()
+
+    if data.empty:
+        raise ValueError("No data fetched from Databento. Check parameters.")
+    print(data.dtypes)
+    print(data)
+    data = data.reset_index()
+    data['ticker'] = data['symbol']
+    data['data_type'] = 'mbp-1'
     print(f"Columns: {data.columns}")
     # Convert to Arrow Table and save as Parquet
     table = pa.Table.from_pandas(data)
@@ -52,6 +111,7 @@ def fetch_and_cache_data(ticker, period="1d", interval="1m"):
     return file_path
 
 def main():
+    load_dotenv()
     print("--- C++/Python Hybrid Trading Strategy ---")
     
     log_file = "engine.log"
@@ -59,8 +119,27 @@ def main():
     print(f"C++ engine output is being logged to: {log_file}")
 
     # 1. Fetch and cache data
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--source", choices=["yfinance", "databento"], help="Select data source")
+    args = parser.parse_args()
+
+    data_source = args.source
+    if not data_source:
+        data_source = input("Select data source (yfinance/databento): ").lower()
+
     try:
-        data_path = fetch_and_cache_data("AAPL", period="1d", interval="1m")
+        if data_source == "yfinance":
+            data_path = fetch_and_cache_data("AAPL", period="1d", interval="1m")
+        elif data_source == "databento":
+            data_path = fetch_and_cache_databento_data(
+                dataset="GLBX.MDP3",
+                start_time="2024-06-28T15:30",
+                end_time="2024-06-28T15:35",
+                symbols=["ESU4"],
+            )
+        else:
+            print("Invalid data source selected.")
+            sys.exit(1)
     except Exception as e:
         print(f"Error fetching data: {e}")
         sys.exit(1)

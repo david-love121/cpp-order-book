@@ -20,10 +20,18 @@ public:
     virtual const std::string& name() const = 0;
 };
 
+enum class RuleCondition {
+    ALWAYS,
+    IF_FLAT,
+    IF_LONG,
+    IF_SHORT
+};
+
 struct Rule {
-    std::string signal_name;
+    std::vector<std::string> signal_names;
     trading::Action action;
     int quantity;
+    RuleCondition condition = RuleCondition::ALWAYS;
 };
 
 #endif // ISIGNAL_H

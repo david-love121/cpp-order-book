@@ -19,6 +19,9 @@
 #include "AboveValueSignal.h"
 #include "BelowValueSignal.h"
 #include "IStrategy.h"
+#include "IRule.h"
+#include "AndRule.h"
+#include "IfRule.h"
 #include "InMemorySink.h"
 #include "TOBSnapshot.h"
 #include "PortfolioSnapshot.h"
@@ -59,6 +62,10 @@ PYBIND11_MODULE(cpp_order_book_engine, m) {
     py::class_<CrossesBelowSignal, ISignal, std::shared_ptr<CrossesBelowSignal>>(m, "CrossesBelowSignal");
     py::class_<AboveValueSignal, ISignal, std::shared_ptr<AboveValueSignal>>(m, "AboveValueSignal");
     py::class_<BelowValueSignal, ISignal, std::shared_ptr<BelowValueSignal>>(m, "BelowValueSignal");
+
+    py::class_<IRule, std::shared_ptr<IRule>>(m, "IRule");
+    py::class_<AndRule, IRule, std::shared_ptr<AndRule>>(m, "AndRule");
+    py::class_<IfRule, IRule, std::shared_ptr<IfRule>>(m, "IfRule");
 
     py::class_<Strategy, IStrategy, std::shared_ptr<Strategy>>(m, "Strategy")
         .def(py::init<const std::string&>())

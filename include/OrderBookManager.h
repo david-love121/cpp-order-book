@@ -43,6 +43,7 @@ private:
     // Current market state for orchestration
     std::string current_symbol_;
     uint64_t last_timestamp_ = 0;
+    uint64_t slippage_ = 0;
     
 public:
     /**

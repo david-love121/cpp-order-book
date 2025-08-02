@@ -8,7 +8,7 @@
 
 OrderBookManager::OrderBookManager(uint64_t tracked_user_id, double max_leverage, double initial_cash)
     : client_id_(1), client_name_("OrderBookManager"), tracked_user_id_(tracked_user_id),
-      max_leverage_(max_leverage), initial_cash_(initial_cash)
+      max_leverage_(max_leverage), initial_cash_(initial_cash), slippage_(5000000) //5 ms
 {
     // Initialize owned components
     order_book_ = std::make_shared<OrderBook>();
